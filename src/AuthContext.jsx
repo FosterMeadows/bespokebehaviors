@@ -4,6 +4,12 @@ import { auth, provider, db } from "./firebaseConfig";         // ← include db
 import { signInWithRedirect, onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+import { signInWithPopup } from "firebase/auth";
+
+
+
+
+
 export const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
@@ -34,7 +40,7 @@ useEffect(() => {
   return () => unsubscribe();
 }, []);
 
-  const login = () => signInWithRedirect(auth, provider);
+  const login = () => signInWithPopup(auth, provider);
   const logout = () => signOut(auth);
 
   return (
