@@ -20,6 +20,9 @@ const firebaseConfig = {
 // 3) Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
+console.log("🔥 Firebase authDomain:", app.options.authDomain);
+window.__FIREBASE_OPTIONS__ = app.options;
+
 // 4) Create & export the pieces you need
 export const auth     = getAuth(app);
 export const provider = new GoogleAuthProvider();
