@@ -2,12 +2,15 @@ import React, { useContext } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthContext } from "./AuthContext.jsx";
 import Layout from "./components/Layout.jsx";
+import Home from "./pages/Home.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import CreateReport from "./pages/CreateReport.jsx";
 import ViewReports from "./pages/ViewReports.jsx";
 import StudentView from "./pages/StudentView.jsx";
-import StudentDetail from "./pages/StudentDetail.jsx"; // ← new
+import StudentDetail from "./pages/StudentDetail.jsx";
 import ArchiveReports from "./pages/ArchiveReports.jsx";
+import Account from "./pages/Account.jsx";
+import MyReports from "./pages/MyReports.jsx";
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
@@ -28,12 +31,17 @@ export default function App() {
   return (
     <Layout displayName={user.displayName} logout={logout}>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        {/* Default landing page changed to Home */}
+        <Route path="/" element={<Home />} />
         <Route path="/create" element={<CreateReport />} />
         <Route path="/view" element={<ViewReports />} />
         <Route path="/student" element={<StudentView />} />
+        <Route path="/student/:name" element={<StudentDetail />} />
         <Route path="/archive" element={<ArchiveReports />} />
-        <Route path="/student/:name" element={<StudentDetail />} /> {/* ← new */}
+        <Route path="/account" element={<Account />} />
+        <Route path="/account/reports" element={<MyReports />} />
+        {/* Optionally keep Dashboard accessible */}
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
