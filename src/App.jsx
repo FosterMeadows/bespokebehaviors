@@ -5,8 +5,8 @@ import Layout from "./components/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import CreateReport from "./pages/CreateReport.jsx";
-import ViewReports from "./pages/ViewReports.jsx";
-import StudentView from "./pages/StudentView.jsx";
+
+import StudentView from "./pages/StudentsList.jsx";
 import StudentDetail from "./pages/StudentDetail.jsx";
 import ArchiveReports from "./pages/ArchiveReports.jsx";
 import Account from "./pages/Account.jsx";
@@ -34,7 +34,7 @@ export default function App() {
         {/* Default landing page changed to Home */}
         <Route path="/" element={<Home />} />
         <Route path="/create" element={<CreateReport />} />
-        <Route path="/view" element={<ViewReports />} />
+    
         <Route path="/student" element={<StudentView />} />
         <Route path="/student/:name" element={<StudentDetail />} />
         <Route path="/archive" element={<ArchiveReports />} />

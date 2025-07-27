@@ -1,16 +1,16 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../firebaseConfig";
-import { AuthContext } from "../AuthContext.jsx";
+import { useReports } from "../hooks/useReports.jsx";
 
-export default function StudentView() {
-  const { user } = useContext(AuthContext);
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function StudentsList() {
+  // Subscribe to all reports for the current teacher
+  const { reports, loading, error } = useReports();
+
+  // Sort, filter, and search state
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [gradeFilter, setGradeFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Bubble color map
   const bubbleColors = {
@@ -22,30 +22,32 @@ export default function StudentView() {
     6: "bg-red-200 text-red-800",
   };
 
-  // Load and group reports into per-student counts
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      setLoading(true);
-      const q = query(
-        collection(db, "reports"),
-        where("teacherId", "==", user.uid)
-      );
-      const snap = await getDocs(q);
-      const map = {};
-      snap.docs.forEach((d) => {
-        const { studentName, gradeLevel } = d.data();
-        if (!map[studentName]) {
-          map[studentName] = { name: studentName, gradeLevel, count: 0 };
-        }
-        map[studentName].count += 1;
-      });
-      setStudents(Object.values(map));
-      setLoading(false);
-    })();
-  }, [user]);
+  if (loading) return <p className="text-lg">Loading students…</p>;
+  if (error) return <p className="text-red-600">Error loading reports.</p>;
 
-  // Toggle sorting
+  // Group reports by student
+  const studentMap = {};
+  reports.forEach(({ studentName, gradeLevel }) => {
+    if (!studentMap[studentName]) {
+      studentMap[studentName] = { name: studentName, gradeLevel, count: 0 };
+    }
+    studentMap[studentName].count += 1;
+  });
+  const baseStudents = Object.values(studentMap);
+
+  // Build suggestions (for dropdown) from the full student list
+  const suggestions = searchTerm
+    ? baseStudents.filter((s) =>
+        s.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
+
+  // Filter by grade
+  let students = baseStudents.filter(
+    (s) => gradeFilter === "all" || s.gradeLevel === gradeFilter
+  );
+
+  // Toggle sort direction or change key
   const toggleSort = (key) => {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -55,26 +57,19 @@ export default function StudentView() {
     }
   };
 
-  // Apply grade filter
-  const filtered = students.filter(
-    (s) => gradeFilter === "all" || s.gradeLevel === gradeFilter
-  );
-
-  // Apply sort
-  const sortedStudents = [...filtered].sort((a, b) => {
+  // Apply sorting
+  const sortedStudents = [...students].sort((a, b) => {
     let vA = a[sortKey],
       vB = b[sortKey];
     if (vA == null) vA = "";
     if (vB == null) vB = "";
 
-    // numeric for gradeLevel & count
     if (sortKey === "gradeLevel" || sortKey === "count") {
       const nA = Number(vA) || 0,
         nB = Number(vB) || 0;
       return sortDir === "asc" ? nA - nB : nB - nA;
     }
 
-    // string for name
     const sA = vA.toString().toLowerCase(),
       sB = vB.toString().toLowerCase();
     if (sA < sB) return sortDir === "asc" ? -1 : 1;
@@ -82,13 +77,39 @@ export default function StudentView() {
     return 0;
   });
 
-  if (loading) return <p className="text-lg">Loading students…</p>;
-
   return (
     <div className="max-w-5xl mx-auto px-4">
+      {/* Header: Title, Search, Grade Filter */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-3xl font-semibold">All Students</h2>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-4">
+          {/* Search box with dropdown */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by name…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="border rounded p-2 text-base w-64"
+            />
+            {suggestions.length > 0 && (
+              <ul className="absolute bg-white border border-gray-200 w-full mt-1 max-h-60 overflow-auto z-10">
+                {suggestions.map((s) => (
+                  <li key={s.name}>
+                    <Link
+                      to={`/student/${encodeURIComponent(s.name)}`}
+                      className="block px-2 py-1 hover:bg-gray-100"
+                      onClick={() => setSearchTerm("")}
+                    >
+                      {s.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Grade dropdown */}
           <label htmlFor="gradeFilter" className="text-base font-medium">
             Grade:
           </label>
@@ -106,6 +127,7 @@ export default function StudentView() {
         </div>
       </div>
 
+      {/* Students Table */}
       <table className="w-full table-auto border-collapse text-base">
         <thead>
           <tr>
@@ -119,14 +141,18 @@ export default function StudentView() {
               onClick={() => toggleSort("gradeLevel")}
               className="cursor-pointer px-6 py-3 text-left border-b text-lg"
             >
-              Grade{' '}
-              {sortKey === "gradeLevel" ? (sortDir === "asc" ? "↑" : "↓") : ""}
+              Grade{" "}
+              {sortKey === "gradeLevel"
+                ? sortDir === "asc"
+                  ? "↑"
+                  : "↓"
+                : ""}
             </th>
             <th
               onClick={() => toggleSort("count")}
               className="cursor-pointer px-6 py-3 text-left border-b text-lg"
             >
-              Reteaches{' '}
+              Reteaches{" "}
               {sortKey === "count" ? (sortDir === "asc" ? "↑" : "↓") : ""}
             </th>
           </tr>
@@ -143,7 +169,7 @@ export default function StudentView() {
                 </Link>
               </td>
               <td className="px-6 py-3 text-lg">{s.gradeLevel}</td>
-              <td className="px-6 py-3 flex items-center space-x-2">
+              <td className="px-6 py-3 text-lg flex items-center space-x-2">
                 {Array.from({ length: Math.min(s.count, 6) }, (_, i) => (
                   <div
                     key={i}

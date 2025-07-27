@@ -1,24 +1,16 @@
 import React, { useEffect, useState, useContext } from "react";
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  getDocs,
-  updateDoc,
-  doc,
-  deleteField,
-} from "firebase/firestore";
+import { updateDoc, doc, deleteField } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import { AuthContext } from "../AuthContext.jsx";
 import sleepyapple from "../assets/happygreen.svg";
+import { useReports } from "../hooks/useReports.jsx";
 
 export default function Dashboard() {
   const { user, profile } = useContext(AuthContext);
+  const { reports, loading, error } = useReports();
   const [pending, setPending] = useState([]);
   const [onDeck, setOnDeck] = useState([]);
   const [comments, setComments] = useState({});
-  const [loading, setLoading] = useState(true);
   const [showDuplicateToast, setShowDuplicateToast] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [currentReport, setCurrentReport] = useState(null);
@@ -30,17 +22,6 @@ export default function Dashboard() {
     const hue = Math.floor(Math.random() * 360);
     return `hsl(${hue}, 30%, 50%)`;
   };
-  useEffect(() => {
-    setCardColors((prev) => {
-      const updated = { ...prev };
-      pending.forEach((r) => {
-        if (!updated[r.id]) {
-          updated[r.id] = genColor();
-        }
-      });
-      return updated;
-    });
-  }, [pending]);
 
   // Compute today’s key once: "MM.DD.YYYY"
   const today = new Date();
@@ -50,40 +31,37 @@ export default function Dashboard() {
     today.getFullYear(),
   ].join(".");
 
-  // Fetch reports and split into on-deck vs pending
+  // Recompute pending/onDeck and comments whenever reports or profile change
   useEffect(() => {
-    if (!user || profile === null) return;
-    setLoading(true);
-    (async () => {
-      const constraints = [where("served", "==", false), orderBy("timestamp", "desc")];
-      if (Array.isArray(profile.gradeLevels) && profile.gradeLevels.length) {
-        const grades = profile.gradeLevels.map((g) => String(g));
-        constraints.push(where("gradeLevel", "in", grades));
-      }
-      const q = query(collection(db, "reports"), ...constraints);
-      const snap = await getDocs(q);
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setOnDeck(all.filter((r) => r.assignedDate === todayKey));
-      setPending(all.filter((r) => r.assignedDate !== todayKey));
-      const init = {};
-      all.forEach((r) => {
-        init[r.id] = r.comment || "";
+    if (!profile) return;
+    const grades = Array.isArray(profile.gradeLevels) && profile.gradeLevels.length
+      ? profile.gradeLevels.map((g) => String(g))
+      : null;
+
+    // Filter for unserved reports and matching grades
+    const filtered = reports.filter((r) => !r.served && (!grades || grades.includes(r.gradeLevel)));
+    setOnDeck(filtered.filter((r) => r.assignedDate === todayKey));
+    setPending(filtered.filter((r) => r.assignedDate !== todayKey));
+
+    // Init comments map
+    const initComments = {};
+    filtered.forEach((r) => { initComments[r.id] = r.comment || ""; });
+    setComments(initComments);
+
+    // Assign card colors for pending
+    setCardColors((prev) => {
+      const updated = { ...prev };
+      filtered.forEach((r) => {
+        if (!updated[r.id]) updated[r.id] = genColor();
       });
-      setComments(init);
-      setLoading(false);
-    })();
-  }, [user, profile, todayKey]);
+      return updated;
+    });
+  }, [reports, profile, todayKey]);
 
-  // Format YYYY-MM-DD to MM.DD.YYYY
-  const formatYMD = (ymd) => {
-    const [year, month, day] = ymd.split("-");
-    return `${month}.${day}.${year}`;
-  };
-
-  // Open comment modal
-  const openCommentModal = (report) => {
-    setCurrentReport(report);
-    setDraftComment(comments[report.id] || "");
+  // Handle comment modal
+  const openCommentModal = (r) => {
+    setCurrentReport(r);
+    setDraftComment(comments[r.id] || "");
     setShowCommentModal(true);
   };
   const saveComment = async () => {
@@ -94,32 +72,30 @@ export default function Dashboard() {
   };
 
   // Deck functions
-  const addToDeck = async (report) => {
-    if (onDeck.some((r) => r.studentName === report.studentName)) {
+  const addToDeck = async (r) => {
+    if (onDeck.some((x) => x.studentName === r.studentName)) {
       setShowDuplicateToast(true);
       setTimeout(() => setShowDuplicateToast(false), 3000);
       return;
     }
-    await updateDoc(doc(db, "reports", report.id), { assignedDate: todayKey });
-    setOnDeck((d) => [...d, report]);
-    setPending((p) => p.filter((r) => r.id !== report.id));
+    await updateDoc(doc(db, "reports", r.id), { assignedDate: todayKey });
   };
-  const removeFromDeck = async (reportId) => {
-    await updateDoc(doc(db, "reports", reportId), { assignedDate: deleteField() });
-    setOnDeck((d) => d.filter((r) => r.id !== reportId));
-    setPending((p) => [...p, onDeck.find((r) => r.id === reportId)]);
+  const removeFromDeck = async (id) => {
+    await updateDoc(doc(db, "reports", id), { assignedDate: deleteField() });
   };
-  const handleServe = async (reportId) => {
-    await updateDoc(doc(db, "reports", reportId), {
+  const handleServe = async (id) => {
+    await updateDoc(doc(db, "reports", id), {
       served: true,
       servedDate: todayKey,
       assignedDate: deleteField(),
     });
-    setOnDeck((d) => d.filter((r) => r.id !== reportId));
   };
 
   if (!user || profile === null || loading) {
     return <div className="max-w-screen-xl mx-auto px-6 py-6 text-center text-gray-600">Loading…</div>;
+  }
+  if (error) {
+    return <div className="max-w-screen-xl mx-auto px-6 py-6 text-center text-red-600">Error loading reports.</div>;
   }
 
   // Chunk pending into rows of up to 3
@@ -127,6 +103,12 @@ export default function Dashboard() {
   for (let i = 0; i < pending.length; i += 3) {
     rows.push(pending.slice(i, i + 3));
   }
+
+  // Helper: format YYYY-MM-DD to MM.DD.YYYY
+  const formatYMD = (ymd) => {
+    const [year, month, day] = ymd.split("-");
+    return `${month}.${day}.${year}`;
+  };
 
   return (
     <div className="max-w-screen-xl mx-auto px-6 py-6 space-y-8">
@@ -172,41 +154,22 @@ export default function Dashboard() {
                   const color = cardColors[r.id] || "#94C973";
                   const full = row.length === 3;
                   return (
-                    <div
-                      key={r.id}
-                      className={`${full ? "flex-1" : "flex-shrink-0"} bg-white shadow rounded overflow-hidden`}
-                    >
+                    <div key={r.id} className={`${full ? "flex-1" : "flex-shrink-0"} bg-white shadow rounded overflow-hidden`}>
                       <div className="bg-gray-50 p-4 flex items-center justify-between border-b">
-                        <span
-                          style={{ backgroundColor: color }}
-                          className="px-3 py-1 text-white rounded-full text-sm font-medium mr-4"
-                        >
-                          {r.studentName}
-                        </span>
-                        <span className="text-gray-600 text-sm whitespace-nowrap">
-                          Date Assigned: {formatYMD(r.date)}
-                        </span>
+                        <span style={{ backgroundColor: color }} className="px-3 py-1 text-white rounded-full text-sm font-medium mr-4 truncate text-center">{r.studentName}</span>
+                        <span className="text-gray-600 text-sm whitespace-nowrap">Date Assigned: {formatYMD(r.date)}</span>
                       </div>
                       <div className="p-4 text-sm text-gray-700 space-y-1">
-                        <p>
-                          <span className="font-medium">Location:</span> {r.location}
-                        </p>
-                        <p>
-                          <span className="font-medium">Assigning Teacher:</span> {r.teacherName}
-                        </p>
-                        <p>
-                          <span className="font-medium">Details:</span> {r.referralDetails}
-                        </p>
+                        <p><span className="font-medium">Location:</span> {r.location}</p>
+                        <p><span className="font-medium">Assigning Teacher:</span> {r.teacherName}</p>
+                        <p><span className="font-medium">Details:</span> {r.referralDetails}</p>
                       </div>
                       <div className="p-4 border-t">
                         <button
                           onClick={() => addToDeck(r)}
                           disabled={onDeck.some((x) => x.id === r.id)}
                           style={{ backgroundColor: color }}
-                          className={`w-full px-3 py-1 rounded text-sm font-medium text-white hover:opacity-80 ${
-                            onDeck.some((x) => x.id === r.id) ? "opacity-40 cursor-not-allowed" : ""
-                          }`}
-                        >
+                          className={`w-full px-3 py-1 rounded text-sm font-medium text-white hover:opacity-80 ${onDeck.some((x) => x.id === r.id) ? "opacity-40 cursor-not-allowed" : ""}`}>
                           {onDeck.some((x) => x.id === r.id) ? "On Deck" : "Add to Today"}
                         </button>
                       </div>

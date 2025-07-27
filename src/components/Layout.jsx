@@ -16,8 +16,8 @@ export default function Layout({ children, displayName, logout }) {
             { to: "/", label: "Home" },
             { to: "/dashboard", label: "Dashboard" },
             { to: "/create", label: "Create Report" },
-            { to: "/view", label: "View Reports" },
-            { to: "/student", label: "Student View" },
+           
+            { to: "/student", label: "Search Students" },
             { to: "/account/reports", label: "My Reports" },
             { to: "/account", label: "Account" },
             { to: "/archive", label: "Archive" },

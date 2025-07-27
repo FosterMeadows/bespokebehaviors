@@ -1,17 +1,28 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
+// Import SVGs *as* components via ?react
+import CreateReportIcon  from "../assets/homecreatereport.svg?react";
+import MyReportsIcon     from "../assets/homemyreports.svg?react";
+import ManageReportsIcon from "../assets/homemanagereports.svg?react";
+import SearchReportsIcon from "../assets/homesearchreports.svg?react";
+
 export default function Home() {
+  // Base classes for icons and text with transition support
+  const iconBaseClass = "h-32 w-32 mb-4 fill-current transition-colors duration-200";
+  const textBaseClass = "text-2xl font-semibold transition-colors duration-200";
+
   return (
-    <div className="grid grid-cols-2 grid-rows-2 gap-6 p-6">
+    <div className="grid grid-cols-2 grid-rows-2 gap-8 p-8">
       {/* Create New Report */}
       <Link
         to="/create"
-        className="flex flex-col items-center justify-center w-full h-80 bg-white border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition p-6"
+        className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
+                   w-full h-[325px] bg-white border border-gray-200 rounded-lg shadow-md p-6
+                   hover:shadow-lg hover:bg-red-50 hover:scale-102 hover:-translate-y-1"
       >
-        {/* Placeholder for graphic */}
-        <div className="h-22 w-12 bg-gray-200 rounded mb-2" />
-        <span className="text-lg font-semibold text-gray-800">
+        <CreateReportIcon className={`${iconBaseClass} text-gray-400 group-hover:text-red-600`} />
+        <span className={`${textBaseClass} text-gray-800 group-hover:text-red-600`}>
           Create New Report
         </span>
       </Link>
@@ -19,21 +30,25 @@ export default function Home() {
       {/* View My Reteaches */}
       <Link
         to="/account/reports"
-        className="flex flex-col items-center justify-center w-full h-80 bg-white border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition p-6"
+        className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
+                   w-full h-[325px] bg-white border border-gray-200 rounded-lg shadow-md p-6
+                   hover:shadow-lg hover:bg-green-50 hover:scale-102 hover:-translate-y-1"
       >
-        <div className="h-22 w-12 bg-gray-200 rounded mb-2" />
-        <span className="text-lg font-semibold text-gray-800">
+        <MyReportsIcon className={`${iconBaseClass} text-gray-400 group-hover:text-green-600`} />
+        <span className={`${textBaseClass} text-gray-800 group-hover:text-green-600`}>
           View My Reteaches
         </span>
       </Link>
 
       {/* Manage Reteaches */}
       <Link
-        to="/Dashboard"
-        className="flex flex-col items-center justify-center w-full h-80 bg-white border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition p-6"
+        to="/dashboard"
+        className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
+                   w-full h-[325px] bg-white border border-gray-200 rounded-lg shadow-md p-6
+                   hover:shadow-lg hover:bg-purple-50 hover:scale-102 hover:-translate-y-1"
       >
-        <div className="h-22 w-12 bg-gray-200 rounded mb-2" />
-        <span className="text-lg font-semibold text-gray-800">
+        <ManageReportsIcon className={`${iconBaseClass} text-gray-400 group-hover:text-purple-600`} />
+        <span className={`${textBaseClass} text-gray-800 group-hover:text-purple-600`}>
           Manage Reteaches
         </span>
       </Link>
@@ -41,10 +56,12 @@ export default function Home() {
       {/* Search Reports */}
       <Link
         to="/student"
-        className="flex flex-col items-center justify-center w-full h-80 bg-white border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition p-6"
+        className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
+                   w-full h-[325px] bg-white border border-gray-200 rounded-lg shadow-md p-6
+                   hover:shadow-lg hover:bg-yellow-50 hover:scale-102 hover:-translate-y-1"
       >
-        <div className="h-22 w-12 bg-gray-200 rounded mb-2" />
-        <span className="text-lg font-semibold text-gray-800">
+        <SearchReportsIcon className={`${iconBaseClass} text-gray-400 group-hover:text-yellow-600`} />
+        <span className={`${textBaseClass} text-gray-800 group-hover:text-yellow-600`}>
           Search Reports
         </span>
       </Link>

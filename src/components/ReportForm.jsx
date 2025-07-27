@@ -1,20 +1,14 @@
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  collection,
-  addDoc,
-  Timestamp,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
+import { collection, addDoc, Timestamp } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebaseConfig";
 import { AuthContext } from "../AuthContext.jsx";
+import { useReports } from "../hooks/useReports.jsx";
 
-// Schema with optional parent-contact fields
+// Validation schema including contact details
 const reportSchema = z.object({
   studentName:     z.string().min(1, "Student name is required"),
   date:            z.string().min(1, "Date is required"),
@@ -25,13 +19,13 @@ const reportSchema = z.object({
   parentContacted: z.boolean().optional(),
   contactPerson:   z.string().optional(),
   contactMethod:   z.string().optional(),
+  contactDetails:  z.string().optional(),
 });
 
 export default function ReportForm({ onSuccess }) {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [toast, setToast] = useState({ visible: false, message: "", student: "" });
-  const [existingCount, setExistingCount] = useState(0);
 
   const {
     register,
@@ -45,53 +39,42 @@ export default function ReportForm({ onSuccess }) {
     defaultValues: {
       gradeLevel:      "6",
       location:        "Classroom",
+      teacherName:     user.displayName || "",
       parentContacted: false,
       contactPerson:   "",
       contactMethod:   "",
+      contactDetails:  "",
     },
   });
 
   const studentNameValue = watch("studentName");
   const parentContacted = watch("parentContacted");
 
-  // Fetch count of existing reports for this student
-  useEffect(() => {
-    if (!studentNameValue) {
-      setExistingCount(0);
-      return;
-    }
-    (async () => {
-      const qCount = query(
-        collection(db, "reports"),
-        where("studentName", "==", studentNameValue)
-      );
-      const snapCount = await getDocs(qCount);
-      setExistingCount(snapCount.size);
-    })();
-  }, [studentNameValue]);
+  // Subscribe to this student's reports for count
+  const { reports: studentReports, loading: countLoading } = useReports({ studentName: studentNameValue });
+  const existingCount = countLoading ? 0 : studentReports.length;
+
+  // Determine if this submission is the third reteach
+  const isThird = existingCount === 2;
+  const contactPrompt = isThird
+    ? "This is the third Reteach given for this student. You MUST make contact home. If you have already done so, check this box. If you will do it soon, you can add it into My Reports later."
+    : "Do you have parent contact relevant to this Reteach that you'd like to add into the system?";
 
   async function onSubmit(data) {
     if (!user) return;
     setToast({ visible: false, message: "", student: "" });
 
-    // Total existing reteaches
-    const allQ = query(
-      collection(db, "reports"),
-      where("studentName", "==", data.studentName)
-    );
-    const snapAll = await getDocs(allQ);
-    const totalCount = snapAll.size;
-
-    if (totalCount >= 6) {
+    // Enforce max 6 reteaches
+    if (existingCount >= 6) {
       setToast({
         visible: true,
-        message: `This student already has ${totalCount} reteaches.`,
+        message: `This student already has ${existingCount} reteaches.`,
         student: data.studentName,
       });
       return;
     }
 
-    // Submit
+    // Submit new report
     await addDoc(collection(db, "reports"), {
       studentName:     data.studentName,
       date:            data.date,
@@ -102,6 +85,7 @@ export default function ReportForm({ onSuccess }) {
       parentContacted: data.parentContacted,
       contactPerson:   data.contactPerson,
       contactMethod:   data.contactMethod,
+      contactDetails:  data.contactDetails,
       timestamp:       Timestamp.now(),
       teacherId:       user.uid,
       served:          false,
@@ -126,9 +110,7 @@ export default function ReportForm({ onSuccess }) {
             className="mt-1 block w-full border rounded p-2"
             placeholder="e.g. Jillian Simpson"
           />
-          {errors.studentName && (
-            <p className="text-red-500 text-sm">{errors.studentName.message}</p>
-          )}
+          {errors.studentName && <p className="text-red-500 text-sm">{errors.studentName.message}</p>}
         </div>
 
         {/* Date */}
@@ -139,16 +121,14 @@ export default function ReportForm({ onSuccess }) {
             {...register("date")}
             className="mt-1 block w-full border rounded p-2"
           />
-          {errors.date && (
-            <p className="text-red-500 text-sm">{errors.date.message}</p>
-          )}
+          {errors.date && <p className="text-red-500 text-sm">{errors.date.message}</p>}
         </div>
 
         {/* Grade Level */}
         <div>
           <span className="block text-sm font-medium mb-1">Grade Level</span>
           <div className="inline-flex rounded-md border overflow-hidden">
-            {["6","7","8"].map(lev => (
+            {["6","7","8"].map((lev) => (
               <button
                 key={lev}
                 type="button"
@@ -158,10 +138,12 @@ export default function ReportForm({ onSuccess }) {
                     ? "bg-blue-600 text-white"
                     : "bg-white text-gray-700 hover:bg-gray-100"
                 }`}
-              >{lev}</button>
+              >
+                {lev}
+              </button>
             ))}
           </div>
-          {errors.gradeLevel && (<p className="text-red-500 text-sm">{errors.gradeLevel.message}</p>)}
+          {errors.gradeLevel && <p className="text-red-500 text-sm">{errors.gradeLevel.message}</p>}
         </div>
 
         {/* Location */}
@@ -175,7 +157,7 @@ export default function ReportForm({ onSuccess }) {
             <option value="Outside">Outside</option>
             <option value="Hallway">Hallway</option>
           </select>
-          {errors.location && (<p className="text-red-500 text-sm">{errors.location.message}</p>)}
+          {errors.location && <p className="text-red-500 text-sm">{errors.location.message}</p>}
         </div>
 
         {/* Teacher Name */}
@@ -186,7 +168,7 @@ export default function ReportForm({ onSuccess }) {
             className="mt-1 block w-full border rounded p-2"
             placeholder="Your name"
           />
-          {errors.teacherName && (<p className="text-red-500 text-sm">{errors.teacherName.message}</p>)}
+          {errors.teacherName && <p className="text-red-500 text-sm">{errors.teacherName.message}</p>}
         </div>
 
         {/* Referral Details */}
@@ -197,60 +179,64 @@ export default function ReportForm({ onSuccess }) {
             className="mt-1 block w-full border rounded p-2 h-24"
             placeholder="Describe behavior or reason for referral..."
           />
-          {errors.referralDetails && (<p className="text-red-500 text-sm">{errors.referralDetails.message}</p>)}
+          {errors.referralDetails && <p className="text-red-500 text-sm">{errors.referralDetails.message}</p>}
         </div>
 
         {/* Parent Contact Section (Step 3+) */}
-        {existingCount >= 2 && (
-          <div className="p-4 border-t space-y-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                {...register('parentContacted')}
-                className="form-checkbox"
-              />
-              <span className="text-sm font-medium">Parent Contacted?</span>
-            </label>
-            {parentContacted && (
-              <div className="space-y-2">
-                <div>
-                  <label className="block text-sm font-medium">Who?</label>
-                  <select
-                    {...register('contactPerson')}
-                    className="mt-1 block w-full border rounded p-2"
-                  >
-                    <option value="">Select</option>
-                    <option value="Mom">Mom</option>
-                    <option value="Dad">Dad</option>
-                    <option value="Step-mom">Step-mom</option>
-                    <option value="Step-dad">Step-dad</option>
-                    <option value="Guardian">Guardian</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium">How?</label>
-                  <select
-                    {...register('contactMethod')}
-                    className="mt-1 block w-full border rounded p-2"
-                  >
-                    <option value="">Select</option>
-                    <option value="Text">Text</option>
-                    <option value="Call">Call</option>
-                    <option value="In-Person">In-Person</option>
-                    <option value="Schoology">Schoology</option>
-                  </select>
-                </div>
+        <div className="p-4 border-t space-y-4">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              {...register('parentContacted')}
+              className="form-checkbox"
+            />
+            <span className="text-sm font-medium">{contactPrompt}</span>
+          </label>
+          {parentContacted && (
+            <div className="space-y-2">
+              <div>
+                <label className="block text-sm font-medium">Who?</label>
+                <input
+                  type="text"
+                  {...register('contactPerson')}
+                  className="mt-1 block w-full border rounded p-2"
+                  placeholder="Enter contact name"
+                />
               </div>
-            )}
-          </div>
-        )}
+              <div>
+                <label className="block text-sm font-medium">How?</label>
+                <select
+                  {...register('contactMethod')}
+                  className="mt-1 block w-full border rounded p-2"
+                >
+                  <option value="">Select</option>
+                  <option value="Text">Text</option>
+                  <option value="Call">Call</option>
+                  <option value="In-Person">In-Person</option>
+                  <option value="Schoology">Schoology</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Details</label>
+                <input
+                  type="text"
+                  {...register('contactDetails')}
+                  className="mt-1 block w-full border rounded p-2"
+                  placeholder="E.g. spoke at 3:30pm"
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Submit Button */}
         <button
           type="submit"
           disabled={isSubmitting}
           className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-        >{isSubmitting ? 'Submitting…' : 'Submit Referral'}</button>
+        >
+          {isSubmitting ? 'Submitting…' : 'Submit Referral'}
+        </button>
       </form>
 
       {/* Error Toast */}
@@ -260,11 +246,15 @@ export default function ReportForm({ onSuccess }) {
           <button
             onClick={() => navigate(`/student/${encodeURIComponent(toast.student)}`)}
             className="underline font-medium"
-          >View History</button>
+          >
+            View History
+          </button>
           <button
-            onClick={() => setToast(t => ({ ...t, visible: false }))}
+            onClick={() => setToast((t) => ({ ...t, visible: false }))}
             className="ml-4 text-xl leading-none"
-          >&times;</button>
+          >
+            &times;
+          </button>
         </div>
       )}
     </>
