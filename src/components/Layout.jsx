@@ -10,33 +10,131 @@ export default function Layout({ children, displayName, logout }) {
         <div className="h-16 flex items-center justify-center bg-gray-100 border-b border-gray-200">
           <span className="text-lg font-semibold text-gray-800">Behavior App</span>
         </div>
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {[
-            { to: "/", label: "Home" },
-            { to: "/dashboard", label: "Dashboard" },
-            { to: "/create", label: "Create Report" },
-           
-            { to: "/student", label: "Search Students" },
-            { to: "/account/reports", label: "My Reports" },
-            { to: "/account", label: "Account" },
-            { to: "/archive", label: "Archive" },
-          ].map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              className={({ isActive }) =>
-                `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                  isActive
-                    ? "bg-blue-200 text-blue-800"
-                    : "text-gray-700 hover:bg-gray-200"
-                }`
-              }
-            >
-              {link.label}
-            </NavLink>
-          ))}
+
+        {/* Main Navigation Group */}
+        <nav className="flex-shrink-0 px-3 py-4 overflow-y-auto">
+          <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase mb-2">
+            Behavior App
+          </h3>
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Home
+          </NavLink>
+          <NavLink
+            to="/log"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Behavior Log
+          </NavLink>
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Dashboard
+          </NavLink>
+          <NavLink
+            to="/create"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Create Report
+          </NavLink>
+          <NavLink
+            to="/student"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Search Students
+          </NavLink>
+          <NavLink
+            to="/account/reports"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            My Reports
+          </NavLink>
+
+          {/* Teacher Tools Group */}
+          <h3 className="mt-6 px-4 text-xs font-semibold text-gray-500 uppercase mb-2">
+            Teacher Tools
+          </h3>
+          <NavLink
+            to="/standards"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Standards Tracker
+          </NavLink>
+          <NavLink
+            to="/toolbelt"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Toolbelt
+          </NavLink>
         </nav>
+
+        {/* Account Link at Bottom */}
+        <nav className="mt-auto px-3 py-4 border-t border-gray-200">
+          <NavLink
+            to="/account"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Account
+          </NavLink>
+        </nav>
+
         {/* User Info & Sign Out */}
         <div className="p-4 bg-gray-100 border-t border-gray-200">
           <p className="text-sm text-gray-600 mb-2">Signed in as</p>

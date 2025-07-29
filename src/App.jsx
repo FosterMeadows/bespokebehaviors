@@ -5,12 +5,14 @@ import Layout from "./components/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import CreateReport from "./pages/CreateReport.jsx";
+import BehaviorLog from "./pages/BehaviorLog.jsx";
 
 import StudentView from "./pages/StudentsList.jsx";
 import StudentDetail from "./pages/StudentDetail.jsx";
 import ArchiveReports from "./pages/ArchiveReports.jsx";
 import Account from "./pages/Account.jsx";
 import MyReports from "./pages/MyReports.jsx";
+import StandardsTracker from "./pages/StandardsTracker.jsx";
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
@@ -33,8 +35,9 @@ export default function App() {
       <Routes>
         {/* Default landing page changed to Home */}
         <Route path="/" element={<Home />} />
+        <Route path="/log" element={<BehaviorLog />} />
+        <Route path="/standards" element={<StandardsTracker />} />
         <Route path="/create" element={<CreateReport />} />
-    
         <Route path="/student" element={<StudentView />} />
         <Route path="/student/:name" element={<StudentDetail />} />
         <Route path="/archive" element={<ArchiveReports />} />

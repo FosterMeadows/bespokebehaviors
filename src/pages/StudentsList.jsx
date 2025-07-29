@@ -1,10 +1,49 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useReports } from "../hooks/useReports.jsx";
+import { AuthContext } from "../AuthContext.jsx";
+import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
 export default function StudentsList() {
-  // Subscribe to all reports for the current teacher
-  const { reports, loading, error } = useReports();
+  const { user, profile } = useContext(AuthContext);
+  const { reports: myReports, loading, error } = useReports();
+  const [sharedReports, setSharedReports] = useState([]);
+
+  // 1) Subscribe to grade‐level reports (shared across teachers)
+  useEffect(() => {
+    if (!profile?.gradeLevels?.length) return;
+
+    const grades = profile.gradeLevels.map((g) => String(g));
+    const sharedQ = query(
+      collection(db, "reports"),
+      where("gradeLevel", "in", grades),
+      orderBy("date", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      sharedQ,
+      (snap) => {
+        const data = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setSharedReports(data);
+      },
+      (err) => {
+        console.error("Shared reports listener failed:", err);
+      }
+    );
+
+    return unsubscribe;
+  }, [profile]);
+
+  // 2) Combine own + shared reports, dedupe by ID
+  const allReports = useMemo(() => {
+    const map = new Map();
+    sharedReports.forEach((r) => map.set(r.id, r));
+    myReports.forEach((r) => {
+      if (!map.has(r.id)) map.set(r.id, r);
+    });
+    return Array.from(map.values());
+  }, [sharedReports, myReports]);
 
   // Sort, filter, and search state
   const [sortKey, setSortKey] = useState("name");
@@ -27,15 +66,19 @@ export default function StudentsList() {
 
   // Group reports by student
   const studentMap = {};
-  reports.forEach(({ studentName, gradeLevel }) => {
+  allReports.forEach(({ studentName, gradeLevel }) => {
     if (!studentMap[studentName]) {
-      studentMap[studentName] = { name: studentName, gradeLevel, count: 0 };
+      studentMap[studentName] = {
+        name: studentName,
+        gradeLevel: String(gradeLevel),
+        count: 0,
+      };
     }
     studentMap[studentName].count += 1;
   });
   const baseStudents = Object.values(studentMap);
 
-  // Build suggestions (for dropdown) from the full student list
+  // Build suggestions for dropdown
   const suggestions = searchTerm
     ? baseStudents.filter((s) =>
         s.name.toLowerCase().includes(searchTerm.toLowerCase())
