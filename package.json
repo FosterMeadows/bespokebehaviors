@@ -23,9 +23,7 @@
     "html-to-draftjs": "^1.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-draft-wysiwyg": "^1.15.0",
     "react-hook-form": "^7.58.1",
-    "react-quill": "^2.0.0",
     "react-router-dom": "^7.6.2",
     "react-select": "^5.10.2",
     "zod": "^3.25.67"
