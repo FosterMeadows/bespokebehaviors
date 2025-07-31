@@ -105,6 +105,28 @@ export default function Layout({ children, displayName, logout }) {
           >
             Standards Tracker
           </NavLink>
+
+             
+
+
+     <NavLink
+            to="/dailyplan"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Daily Plan
+          </NavLink>
+
+
+
+
+
+
           <NavLink
             to="/toolbelt"
             className={({ isActive }) =>

@@ -13,6 +13,8 @@ import ArchiveReports from "./pages/ArchiveReports.jsx";
 import Account from "./pages/Account.jsx";
 import MyReports from "./pages/MyReports.jsx";
 import StandardsTracker from "./pages/StandardsTracker.jsx";
+import StandardsKanban from "./pages/StandardsKanban.jsx";
+import DailyPlan from "./pages/DailyPlan.jsx";
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
@@ -45,6 +47,9 @@ export default function App() {
         <Route path="/account/reports" element={<MyReports />} />
         {/* Optionally keep Dashboard accessible */}
         <Route path="/dashboard" element={<Dashboard />} />
+             <Route path="/standards-kanban" element={<StandardsKanban />} />
+               <Route path="/dailyplan" element={<DailyPlan />} />
+   
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
