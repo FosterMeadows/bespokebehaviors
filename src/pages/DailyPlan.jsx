@@ -39,14 +39,14 @@ function Chevron({ collapsed }) {
         transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
         transition: "transform 0.2s"
       }}
-      viewBox="0 0 20 20" fill="none">
+      viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M6 8l4 4 4-4" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 function CopyIcon() {
   return (
-    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20">
+    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20" aria-hidden="true">
       <rect x="4" y="6" width="10" height="10" rx="2" fill="#aaa"/>
       <rect x="7" y="4" width="9" height="12" rx="2" stroke="#aaa" strokeWidth="1.5"/>
     </svg>
@@ -54,11 +54,31 @@ function CopyIcon() {
 }
 function PasteIcon() {
   return (
-    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20">
+    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20" aria-hidden="true">
       <rect x="4" y="6" width="10" height="10" rx="2" fill="#34d399"/>
       <path d="M9 9v3h2V9m0 3v2" stroke="#047857" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   );
+}
+
+// Helpers
+function formatPrettyDate(d) {
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+function formatWeekday(d) {
+  return d.toLocaleDateString(undefined, { weekday: "long" });
+}
+function makeDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`; // canonical YYYY-MM-DD for storage/query
+}
+function toLocalDateInputValue(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`; // avoid UTC drift from toISOString()
 }
 
 export default function DailyPlan() {
@@ -70,27 +90,36 @@ export default function DailyPlan() {
   const [preps, setPreps] = useState(PREP_DEFAULTS);
   const [showPrepEdit, setShowPrepEdit] = useState(false);
   const [editPreps, setEditPreps] = useState([]);
+  const [showCalendar, setShowCalendar] = useState(false);
+
 
   // --- Collapsed state for each prep section ---
   const [collapsedPreps, setCollapsedPreps] = useState({});
   // --- Clipboard for copy/paste ---
   const [prepClipboard, setPrepClipboard] = useState(null);
 
-  // Date, planner, etc.
+  // URL param parsing (MM.DD.YYYY) with validation
   const paramDate = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("date");
+    const raw = params.get("date");
+    return raw && /^\d{2}\.\d{2}\.\d{4}$/.test(raw) ? raw : null;
   }, [location.search]);
+
+  // Current date state
   const [currentDate, setCurrentDate] = useState(() => {
     if (paramDate) {
-      const [m, d, y] = paramDate.split(".");
-      return new Date(Number(y), Number(m) - 1, Number(d));
+      const [m, d, y] = paramDate.split(".").map(Number);
+      return new Date(y, m - 1, d);
     }
     return new Date();
   });
-  const [today, setToday] = useState("");
-  const [weekday, setWeekday] = useState("");
-  const [showCalendar, setShowCalendar] = useState(false);
+
+  // Derived date fields
+  const dateKey = useMemo(() => makeDateKey(currentDate), [currentDate]);
+  const [today, setToday] = useState(formatPrettyDate(currentDate));
+  const [weekday, setWeekday] = useState(formatWeekday(currentDate));
+
+  // Data & UI state
   const [loading, setLoading] = useState(true);
   const [planId, setPlanId] = useState(null);
   const [plan, setPlan] = useState(null);
@@ -100,9 +129,13 @@ export default function DailyPlan() {
   const [success, setSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // For standards
-  const standardOptions = ela8.map((s) => ({ value: s.code, label: `${s.code}: ${s.text}` }));
+  // For standards (memoized)
+  const standardOptions = useMemo(
+    () => ela8.map((s) => ({ value: s.code, label: `${s.code}: ${s.text}` })),
+    []
+  );
 
+  // Load user's prep names
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -112,22 +145,19 @@ export default function DailyPlan() {
         if (snap.exists() && snap.data().prepNames) {
           setPreps(snap.data().prepNames);
         }
-      } catch (err) {
+      } catch {
         setPreps(PREP_DEFAULTS);
       }
     })();
   }, [user]);
 
+  // Update pretty date and weekday when currentDate changes
   useEffect(() => {
-    const d = currentDate;
-    setToday(
-      d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
-    );
-    setWeekday(
-      d.toLocaleDateString(undefined, { weekday: "long" })
-    );
+    setToday(formatPrettyDate(currentDate));
+    setWeekday(formatWeekday(currentDate));
   }, [currentDate]);
 
+  // Keep URL param in sync as MM.DD.YYYY
   useEffect(() => {
     const month = String(currentDate.getMonth() + 1).padStart(2, "0");
     const day = String(currentDate.getDate()).padStart(2, "0");
@@ -136,13 +166,23 @@ export default function DailyPlan() {
     navigate(`?date=${param}`, { replace: true });
   }, [currentDate, navigate]);
 
+  // If the URL param changes externally, update the date
   useEffect(() => {
-    if (!user || !today) return;
+    if (paramDate) {
+      const [m, d, y] = paramDate.split(".").map(Number);
+      const next = new Date(y, m - 1, d);
+      if (!isNaN(next.valueOf())) setCurrentDate(next);
+    }
+  }, [paramDate]);
+
+  // Load plan for dateKey
+  useEffect(() => {
+    if (!user || !dateKey) return;
     setLoading(true);
     (async () => {
       const ref = collection(db, "teachers", user.uid, "dailyPlans");
-      const q = query(ref, where("date", "==", today), orderBy("createdAt", "desc"), limit(1));
-      const snap = await getDocs(q);
+      const qy = query(ref, where("dateKey", "==", dateKey), orderBy("createdAt", "desc"), limit(1));
+      const snap = await getDocs(qy);
       let planData = null, planDocId = null;
       if (!snap.empty) {
         planDocId = snap.docs[0].id;
@@ -150,11 +190,19 @@ export default function DailyPlan() {
       }
       setPlanId(planDocId);
       setPlan(planData);
-      // Initialize state for each prep
+      setIsEditing(planData == null); // new = editing by default
+      setLoading(false);
+    })();
+  }, [user, dateKey]);
+
+  // Initialize or preserve per-prep state when plan or preps change
+  useEffect(() => {
+    setPrepData(prev => {
       const base = {};
       preps.forEach(({ id }) => {
-        const d = planData?.preps?.[id] || {};
-        base[id] = {
+        const d = plan?.preps?.[id] || {};
+        // Preserve existing edits if present; otherwise initialize from plan or defaults
+        base[id] = prev[id] ?? {
           title: d.title || "",
           standards: d.standards || [],
           performanceGoal: d.performanceGoal || "",
@@ -165,19 +213,9 @@ export default function DailyPlan() {
           seqDone: Array.isArray(d.seqDone) ? d.seqDone : [],
         };
       });
-      setPrepData(base);
-      setIsEditing(planData == null); // new = editing by default
-      setLoading(false);
-    })();
-    // eslint-disable-next-line
-  }, [user, today, preps]);
-
-  useEffect(() => {
-    if (paramDate) {
-      const [m, d, y] = paramDate.split(".");
-      setCurrentDate(new Date(Number(y), Number(m) - 1, Number(d)));
-    }
-  }, [paramDate]);
+      return base;
+    });
+  }, [plan, preps]);
 
   const changeDate = (offset) => {
     let d = new Date(currentDate);
@@ -188,36 +226,40 @@ export default function DailyPlan() {
   // Save all prep data together in a single plan doc
   const savePlan = async (e) => {
     e?.preventDefault();
-    for (let { id, name } of preps) {
-      if (!prepData[id].title || prepData[id].standards.length === 0) {
-        setError(`Each prep requires a title and at least one standard (${name})`);
-        return;
-      }
-    }
+
+    // Allow blanks: remove pre-save validation gate
+    setError("");
+
     setSaving(true);
     const payload = {
-      date: today,
+      dateKey,            // canonical for queries
+      date: today,        // pretty for display
       weekday,
+      isPublic: true,    
       preps: {},
       updatedAt: serverTimestamp(),
     };
     preps.forEach(({ id }) => {
       payload.preps[id] = {
-        title: prepData[id].title,
-        standards: prepData[id].standards,
-        performanceGoal: prepData[id].performanceGoal || "",
-        objective: prepData[id].objective || "",
-        prepSteps: prepData[id].prepSteps.filter(Boolean),
-        seqSteps: prepData[id].seqSteps.filter(Boolean),
-        prepDone: prepData[id].prepDone,
-        seqDone: prepData[id].seqDone,
+        title: prepData[id]?.title || "",
+        standards: prepData[id]?.standards || [],
+        performanceGoal: prepData[id]?.performanceGoal || "",
+        objective: prepData[id]?.objective || "",
+        // keep your trimming of empty rows
+        prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
+        seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
+        prepDone: prepData[id]?.prepDone || [],
+        seqDone: prepData[id]?.seqDone || [],
       };
     });
     try {
       if (planId) {
         await updateDoc(doc(db, "teachers", user.uid, "dailyPlans", planId), payload);
       } else {
-        const ref = await addDoc(collection(db, "teachers", user.uid, "dailyPlans"), { ...payload, createdAt: serverTimestamp() });
+        const ref = await addDoc(collection(db, "teachers", user.uid, "dailyPlans"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
         setPlanId(ref.id);
       }
       setPlan(payload);
@@ -231,6 +273,11 @@ export default function DailyPlan() {
   };
 
   // Prep name editing logic
+  useEffect(() => {
+    // Initialize editPreps when modal opens (avoid setting state during render)
+    if (showPrepEdit) setEditPreps(preps);
+  }, [showPrepEdit, preps]);
+
   const handlePrepNamesSave = async () => {
     setPreps(editPreps);
     setShowPrepEdit(false);
@@ -257,13 +304,14 @@ export default function DailyPlan() {
   }
 
   function handleCopy(id) {
-    const data = prepData[id];
+    const data = prepData[id] || {};
+    // Deep clone arrays so clipboard isn’t referencing live state
     setPrepClipboard({
-      standards: data.standards || [],
+      standards: [...(data.standards || [])],
       performanceGoal: data.performanceGoal || "",
       objective: data.objective || "",
-      prepSteps: data.prepSteps || [""],
-      seqSteps: data.seqSteps || [""],
+      prepSteps: [...(data.prepSteps || [""])],
+      seqSteps: [...(data.seqSteps || [""])],
     });
   }
   function handlePaste(id) {
@@ -272,11 +320,11 @@ export default function DailyPlan() {
       ...pd,
       [id]: {
         ...pd[id],
-        standards: prepClipboard.standards,
-        performanceGoal: prepClipboard.performanceGoal,
-        objective: prepClipboard.objective,
-        prepSteps: prepClipboard.prepSteps,
-        seqSteps: prepClipboard.seqSteps,
+        standards: [...(prepClipboard.standards || [])],
+        performanceGoal: prepClipboard.performanceGoal || "",
+        objective: prepClipboard.objective || "",
+        prepSteps: [...(prepClipboard.prepSteps || [""])],
+        seqSteps: [...(prepClipboard.seqSteps || [""])],
       }
     }));
   }
@@ -289,7 +337,7 @@ export default function DailyPlan() {
         <div className="max-w-5xl mx-auto p-6 space-y-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
           <div className="flex justify-between items-center pb-2 border-b border-gray-200">
             <button onClick={() => changeDate(-1)}
-              className="text-xl text-gray-400 hover:text-gray-700 transition">←</button>
+              className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
             <div className="relative">
               <h1
                 onClick={() => setShowCalendar(true)}
@@ -299,8 +347,11 @@ export default function DailyPlan() {
               {showCalendar && (
                 <input
                   type="date"
-                  value={currentDate.toISOString().slice(0, 10)}
-                  onChange={e => setCurrentDate(new Date(e.target.value))}
+                  value={toLocalDateInputValue(currentDate)}
+                  onChange={e => {
+                    const [y, m, d] = e.target.value.split("-").map(Number);
+                    setCurrentDate(new Date(y, m - 1, d));
+                  }}
                   onBlur={() => setShowCalendar(false)}
                   className="absolute top-full mt-1 border rounded shadow-lg p-2"
                   autoFocus
@@ -308,7 +359,7 @@ export default function DailyPlan() {
               )}
             </div>
             <button onClick={() => changeDate(1)}
-              className="text-xl text-gray-400 hover:text-gray-700 transition">→</button>
+              className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
           </div>
           <div className="flex justify-end space-x-3">
             <button
@@ -330,6 +381,7 @@ export default function DailyPlan() {
                   <button
                     className="ml-2 px-2 py-1 rounded hover:bg-gray-100"
                     aria-label={collapsed ? "Expand section" : "Collapse section"}
+                    aria-expanded={!collapsed}
                     onClick={() => toggleCollapse(id)}
                     style={{ fontSize: 15, color: pastel.text, lineHeight: 1.2 }}
                   >
@@ -405,6 +457,7 @@ export default function DailyPlan() {
                                 }));
                               }}
                               className="mr-2 scale-110 accent-gray-600"
+                              aria-label={`Mark prep item ${i + 1} ${d.prepDone?.[i] ? "incomplete" : "complete"}`}
                             />
                             <span className={d.prepDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
                           </li>
@@ -439,6 +492,7 @@ export default function DailyPlan() {
                                 }));
                               }}
                               className="mr-2 scale-110 accent-gray-600"
+                              aria-label={`Mark sequence item ${i + 1} ${d.seqDone?.[i] ? "incomplete" : "complete"}`}
                             />
                             <span className={d.seqDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
                           </li>
@@ -455,7 +509,6 @@ export default function DailyPlan() {
             <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg shadow-xl p-6 min-w-[320px]">
                 <h2 className="text-lg font-bold mb-4">Edit Preps</h2>
-                {editPreps.length === 0 && setEditPreps(preps)}
                 {editPreps.map((p, idx) => (
                   <div key={p.id} className="flex items-center space-x-2 mb-2">
                     <input
@@ -501,14 +554,14 @@ export default function DailyPlan() {
       <div className="max-w-5xl mx-auto p-6 space-y-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
         <div className="flex justify-between items-center pb-2 border-b border-gray-200">
           <button onClick={() => changeDate(-1)}
-            className="text-xl text-gray-400 hover:text-gray-700 transition">←</button>
+            className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
           <h1 className="text-2xl font-bold" style={{ color: pastel.text }}>Daily Plan - {weekday}, {today}</h1>
           <button onClick={() => changeDate(1)}
-            className="text-xl text-gray-400 hover:text-gray-700 transition">→</button>
+            className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
         </div>
         <div className="flex justify-end mb-2">
           <button
-            onClick={() => { setEditPreps(preps); setShowPrepEdit(true); }}
+            onClick={() => { setShowPrepEdit(true); }}
             className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
           >Edit Preps</button>
         </div>
@@ -516,11 +569,11 @@ export default function DailyPlan() {
           {preps.map(({ id, name }) => {
             const collapsed = collapsedPreps[id];
             const isCopy = prepClipboard &&
-              prepData[id]?.standards?.toString() === prepClipboard.standards?.toString() &&
-              prepData[id]?.performanceGoal === prepClipboard.performanceGoal &&
-              prepData[id]?.objective === prepClipboard.objective &&
-              JSON.stringify(prepData[id]?.prepSteps) === JSON.stringify(prepClipboard.prepSteps) &&
-              JSON.stringify(prepData[id]?.seqSteps) === JSON.stringify(prepClipboard.seqSteps);
+              (prepData[id]?.standards || []).toString() === (prepClipboard.standards || []).toString() &&
+              (prepData[id]?.performanceGoal || "") === (prepClipboard.performanceGoal || "") &&
+              (prepData[id]?.objective || "") === (prepClipboard.objective || "") &&
+              JSON.stringify(prepData[id]?.prepSteps || []) === JSON.stringify(prepClipboard?.prepSteps || []) &&
+              JSON.stringify(prepData[id]?.seqSteps || []) === JSON.stringify(prepClipboard?.seqSteps || []);
 
             return (
               <section key={id} className="bg-white p-5 rounded-lg border border-gray-200 shadow-md space-y-4">
@@ -549,6 +602,7 @@ export default function DailyPlan() {
                     <button
                       className="ml-2 px-2 py-1 rounded hover:bg-gray-100"
                       aria-label={collapsed ? "Expand section" : "Collapse section"}
+                      aria-expanded={!collapsed}
                       type="button"
                       onClick={e => { e.preventDefault(); toggleCollapse(id); }}
                       style={{ fontSize: 15, color: pastel.text, lineHeight: 1.2 }}
@@ -567,10 +621,13 @@ export default function DailyPlan() {
                 >
                   <div className="mb-2">
                     <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Lesson Title</label>
-                    <input type="text" className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
+                    <input
+                      type="text"
+                      className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
                       value={prepData[id]?.title || ""}
                       onChange={e => setPrepData(pd => ({ ...pd, [id]: { ...pd[id], title: e.target.value } }))}
-                      required />
+                      /* required removed to allow blanks */
+                    />
                   </div>
                   <div className="mb-2">
                     <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Standards</label>
@@ -709,7 +766,6 @@ export default function DailyPlan() {
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 min-w-[320px]">
               <h2 className="text-lg font-bold mb-4">Edit Preps</h2>
-              {editPreps.length === 0 && setEditPreps(preps)}
               {editPreps.map((p, idx) => (
                 <div key={p.id} className="flex items-center space-x-2 mb-2">
                   <input

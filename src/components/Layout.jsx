@@ -16,18 +16,7 @@ export default function Layout({ children, displayName, logout }) {
           <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase mb-2">
             Behavior App
           </h3>
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                isActive
-                  ? "bg-blue-200 text-blue-800"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`
-            }
-          >
-            Home
-          </NavLink>
+
           <NavLink
             to="/log"
             className={({ isActive }) =>
@@ -40,59 +29,7 @@ export default function Layout({ children, displayName, logout }) {
           >
             Behavior Log
           </NavLink>
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                isActive
-                  ? "bg-blue-200 text-blue-800"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`
-            }
-          >
-            Dashboard
-          </NavLink>
-          <NavLink
-            to="/create"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                isActive
-                  ? "bg-blue-200 text-blue-800"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`
-            }
-          >
-            Create Report
-          </NavLink>
-          <NavLink
-            to="/student"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                isActive
-                  ? "bg-blue-200 text-blue-800"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`
-            }
-          >
-            Search Students
-          </NavLink>
-          <NavLink
-            to="/account/reports"
-            className={({ isActive }) =>
-              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
-                isActive
-                  ? "bg-blue-200 text-blue-800"
-                  : "text-gray-700 hover:bg-gray-200"
-              }`
-            }
-          >
-            My Reports
-          </NavLink>
 
-          {/* Teacher Tools Group */}
-          <h3 className="mt-6 px-4 text-xs font-semibold text-gray-500 uppercase mb-2">
-            Teacher Tools
-          </h3>
           <NavLink
             to="/standards"
             className={({ isActive }) =>
@@ -106,10 +43,7 @@ export default function Layout({ children, displayName, logout }) {
             Standards Tracker
           </NavLink>
 
-             
-
-
-     <NavLink
+          <NavLink
             to="/dailyplan"
             className={({ isActive }) =>
               `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
@@ -122,13 +56,8 @@ export default function Layout({ children, displayName, logout }) {
             Daily Plan
           </NavLink>
 
-
-
-
-
-
           <NavLink
-            to="/toolbelt"
+            to="/gradecalculator"
             className={({ isActive }) =>
               `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
                 isActive
@@ -137,7 +66,33 @@ export default function Layout({ children, displayName, logout }) {
               }`
             }
           >
-            Toolbelt
+            Grade Calculator
+          </NavLink>
+
+          <NavLink
+            to="/teachernotes"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Teacher Notes
+          </NavLink>
+
+          <NavLink
+            to="/megachecklist"
+            className={({ isActive }) =>
+              `block px-4 py-2 rounded-lg transition-colors text-base font-medium ${
+                isActive
+                  ? "bg-blue-200 text-blue-800"
+                  : "text-gray-700 hover:bg-gray-200"
+              }`
+            }
+          >
+            Mega Checklist
           </NavLink>
         </nav>
 
@@ -171,9 +126,7 @@ export default function Layout({ children, displayName, logout }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto p-6 bg-white">
-        {children}
-      </main>
+      <main className="flex-1 overflow-auto p-6 bg-white">{children}</main>
     </div>
   );
 }

@@ -12,7 +12,11 @@ import {
 } from "firebase/firestore";
 
 export default function BehaviorLog() {
+  const PUBLIC_UID = "ylP0ToTLlvchPVLRPFLq7KoGVCy1";
+
+
   const { user } = useContext(AuthContext);
+
 
   // Search & selection
   const [studentName, setStudentName] = useState("");
