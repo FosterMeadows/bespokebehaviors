@@ -4,7 +4,8 @@ import { db } from "../firebaseConfig";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   collection, addDoc, updateDoc, doc, serverTimestamp,
-  query, where, orderBy, limit, getDoc, setDoc, getDocs
+  query, where, orderBy, limit, getDoc, setDoc, getDocs,
+  runTransaction
 } from "firebase/firestore";
 import Select from "react-select";
 import ela8 from "../data/standards/ela8.json";
@@ -35,10 +36,7 @@ const PREP_DEFAULTS = [
 function Chevron({ collapsed }) {
   return (
     <svg width="18" height="18" className="inline-block ml-2"
-      style={{
-        transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
-        transition: "transform 0.2s"
-      }}
+      style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
       viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M6 8l4 4 4-4" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
@@ -92,13 +90,12 @@ export default function DailyPlan() {
   const [editPreps, setEditPreps] = useState([]);
   const [showCalendar, setShowCalendar] = useState(false);
 
-
-  // --- Collapsed state for each prep section ---
+  // Collapsed state per prep
   const [collapsedPreps, setCollapsedPreps] = useState({});
-  // --- Clipboard for copy/paste ---
+  // Clipboard for copy/paste
   const [prepClipboard, setPrepClipboard] = useState(null);
 
-  // URL param parsing (MM.DD.YYYY) with validation
+  // URL param parsing (MM.DD.YYYY)
   const paramDate = useMemo(() => {
     const params = new URLSearchParams(location.search);
     const raw = params.get("date");
@@ -129,7 +126,7 @@ export default function DailyPlan() {
   const [success, setSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // For standards (memoized)
+  // Standards options
   const standardOptions = useMemo(
     () => ela8.map((s) => ({ value: s.code, label: `${s.code}: ${s.text}` })),
     []
@@ -175,20 +172,18 @@ export default function DailyPlan() {
     }
   }, [paramDate]);
 
-  // Load plan for dateKey
+  // Load plan for dateKey using deterministic doc ID
   useEffect(() => {
     if (!user || !dateKey) return;
     setLoading(true);
     (async () => {
-      const ref = collection(db, "teachers", user.uid, "dailyPlans");
-      const qy = query(ref, where("dateKey", "==", dateKey), orderBy("createdAt", "desc"), limit(1));
-      const snap = await getDocs(qy);
-      let planData = null, planDocId = null;
-      if (!snap.empty) {
-        planDocId = snap.docs[0].id;
-        planData = snap.docs[0].data();
+      const ref = doc(db, "teachers", user.uid, "dailyPlans", dateKey);
+      const snap = await getDoc(ref);
+      let planData = null;
+      if (snap.exists()) {
+        planData = snap.data();
       }
-      setPlanId(planDocId);
+      setPlanId(dateKey); // deterministic
       setPlan(planData);
       setIsEditing(planData == null); // new = editing by default
       setLoading(false);
@@ -201,7 +196,6 @@ export default function DailyPlan() {
       const base = {};
       preps.forEach(({ id }) => {
         const d = plan?.preps?.[id] || {};
-        // Preserve existing edits if present; otherwise initialize from plan or defaults
         base[id] = prev[id] ?? {
           title: d.title || "",
           standards: d.standards || [],
@@ -223,58 +217,111 @@ export default function DailyPlan() {
     setCurrentDate(d);
   };
 
-  // Save all prep data together in a single plan doc
+  // Build editable fields payload (does not touch prepDone/seqDone)
+  const buildEditableFieldUpdates = () => {
+    const updates = {};
+    // top-level fields
+    updates["dateKey"] = dateKey;
+    updates["date"] = today;
+    updates["weekday"] = weekday;
+    updates["isPublic"] = true;
+    updates["updatedAt"] = serverTimestamp();
+
+    // per-prep editable fields only
+    preps.forEach(({ id }) => {
+      updates[`preps.${id}.title`] = prepData[id]?.title || "";
+      updates[`preps.${id}.standards`] = prepData[id]?.standards || [];
+      updates[`preps.${id}.performanceGoal`] = prepData[id]?.performanceGoal || "";
+      updates[`preps.${id}.objective`] = prepData[id]?.objective || "";
+      updates[`preps.${id}.prepSteps`] = (prepData[id]?.prepSteps || []).filter(Boolean);
+      updates[`preps.${id}.seqSteps`] = (prepData[id]?.seqSteps || []).filter(Boolean);
+      // intentionally NOT writing preps.${id}.prepDone or seqDone here
+    });
+    return updates;
+  };
+
+  // Save using transaction with revision guard
   const savePlan = async (e) => {
     e?.preventDefault();
-
-    // Allow blanks: remove pre-save validation gate
     setError("");
+    if (!user || !planId) return;
 
     setSaving(true);
-    const payload = {
-      dateKey,            // canonical for queries
-      date: today,        // pretty for display
-      weekday,
-      isPublic: true,    
-      preps: {},
-      updatedAt: serverTimestamp(),
-    };
-    preps.forEach(({ id }) => {
-      payload.preps[id] = {
-        title: prepData[id]?.title || "",
-        standards: prepData[id]?.standards || [],
-        performanceGoal: prepData[id]?.performanceGoal || "",
-        objective: prepData[id]?.objective || "",
-        // keep your trimming of empty rows
-        prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
-        seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
-        prepDone: prepData[id]?.prepDone || [],
-        seqDone: prepData[id]?.seqDone || [],
-      };
-    });
+    const planRef = doc(db, "teachers", user.uid, "dailyPlans", planId);
+
     try {
-      if (planId) {
-        await updateDoc(doc(db, "teachers", user.uid, "dailyPlans", planId), payload);
-      } else {
-        const ref = await addDoc(collection(db, "teachers", user.uid, "dailyPlans"), {
-          ...payload,
-          createdAt: serverTimestamp(),
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(planRef);
+        const now = serverTimestamp();
+
+        if (!snap.exists()) {
+          // create new doc with rev = 1
+          const base = {
+            dateKey,
+            date: today,
+            weekday,
+            isPublic: true,
+            createdAt: now,
+            updatedAt: now,
+            rev: 1,
+            preps: {}
+          };
+          // set only editable fields and leave done arrays empty
+          preps.forEach(({ id }) => {
+            base.preps[id] = {
+              title: prepData[id]?.title || "",
+              standards: prepData[id]?.standards || [],
+              performanceGoal: prepData[id]?.performanceGoal || "",
+              objective: prepData[id]?.objective || "",
+              prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
+              seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
+              // done arrays intentionally omitted on create; view uses defaults
+            };
+          });
+          tx.set(planRef, base, { merge: false });
+        } else {
+          // update existing with rev check and patch fields
+          const current = snap.data();
+          const currentRev = typeof current.rev === "number" ? current.rev : 0;
+          const updates = buildEditableFieldUpdates();
+          updates["rev"] = currentRev + 1;
+          tx.update(planRef, updates);
+        }
+      });
+
+      // reflect local plan with patched fields, but keep any done arrays from current plan
+      setPlan((prev) => {
+        const next = { ...(prev || {}), dateKey, date: today, weekday, isPublic: true };
+        next.preps = next.preps || {};
+        preps.forEach(({ id }) => {
+          const prevPrep = prev?.preps?.[id] || {};
+          next.preps[id] = {
+            ...prevPrep,
+            title: prepData[id]?.title || "",
+            standards: prepData[id]?.standards || [],
+            performanceGoal: prepData[id]?.performanceGoal || "",
+            objective: prepData[id]?.objective || "",
+            prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
+            seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
+            // keep prevPrep.prepDone/seqDone as-is
+          };
         });
-        setPlanId(ref.id);
-      }
-      setPlan(payload);
+        return next;
+      });
+
       setSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSuccess(false), 2000);
-    } catch {
-      setError("Save failed, try again.");
+    } catch (err) {
+      console.error("savePlan tx failed", err);
+      setError("Save failed, possibly due to a concurrent change. Reload and try again.");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   // Prep name editing logic
   useEffect(() => {
-    // Initialize editPreps when modal opens (avoid setting state during render)
     if (showPrepEdit) setEditPreps(preps);
   }, [showPrepEdit, preps]);
 
@@ -297,15 +344,11 @@ export default function DailyPlan() {
   };
 
   function toggleCollapse(prepId) {
-    setCollapsedPreps(cp => ({
-      ...cp,
-      [prepId]: !cp[prepId]
-    }));
+    setCollapsedPreps(cp => ({ ...cp, [prepId]: !cp[prepId] }));
   }
 
   function handleCopy(id) {
     const data = prepData[id] || {};
-    // Deep clone arrays so clipboard isn’t referencing live state
     setPrepClipboard({
       standards: [...(data.standards || [])],
       performanceGoal: data.performanceGoal || "",
@@ -404,11 +447,7 @@ export default function DailyPlan() {
                         <li key={code} className="text-gray-800 flex items-center">
                           <span
                             className="rounded px-2 py-0.5 text-xs mr-2 font-mono"
-                            style={{
-                              background: pastel.bg,
-                              color: pastel.text,
-                              opacity: 0.85,
-                            }}
+                            style={{ background: pastel.bg, color: pastel.text, opacity: 0.85 }}
                           >{code}</span>
                           {s?.text}
                         </li>
@@ -447,13 +486,7 @@ export default function DailyPlan() {
                                 });
                                 setPlan(p => ({
                                   ...p,
-                                  preps: {
-                                    ...p.preps,
-                                    [id]: {
-                                      ...p.preps[id],
-                                      prepDone: updated
-                                    }
-                                  }
+                                  preps: { ...p.preps, [id]: { ...p.preps[id], prepDone: updated } }
                                 }));
                               }}
                               className="mr-2 scale-110 accent-gray-600"
@@ -482,13 +515,7 @@ export default function DailyPlan() {
                                 });
                                 setPlan(p => ({
                                   ...p,
-                                  preps: {
-                                    ...p.preps,
-                                    [id]: {
-                                      ...p.preps[id],
-                                      seqDone: updated
-                                    }
-                                  }
+                                  preps: { ...p.preps, [id]: { ...p.preps[id], seqDone: updated } }
                                 }));
                               }}
                               className="mr-2 scale-110 accent-gray-600"
@@ -626,7 +653,6 @@ export default function DailyPlan() {
                       className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
                       value={prepData[id]?.title || ""}
                       onChange={e => setPrepData(pd => ({ ...pd, [id]: { ...pd[id], title: e.target.value } }))}
-                      /* required removed to allow blanks */
                     />
                   </div>
                   <div className="mb-2">
