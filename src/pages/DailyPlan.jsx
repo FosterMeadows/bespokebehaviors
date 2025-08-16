@@ -190,26 +190,27 @@ export default function DailyPlan() {
     })();
   }, [user, dateKey]);
 
-  // Initialize or preserve per-prep state when plan or preps change
-  useEffect(() => {
-    setPrepData(prev => {
-      const base = {};
-      preps.forEach(({ id }) => {
-        const d = plan?.preps?.[id] || {};
-        base[id] = prev[id] ?? {
-          title: d.title || "",
-          standards: d.standards || [],
-          performanceGoal: d.performanceGoal || "",
-          objective: d.objective || "",
-          prepSteps: Array.isArray(d.prepSteps) ? d.prepSteps : [""],
-          seqSteps: Array.isArray(d.seqSteps) ? d.seqSteps : [""],
-          prepDone: Array.isArray(d.prepDone) ? d.prepDone : [],
-          seqDone: Array.isArray(d.seqDone) ? d.seqDone : [],
-        };
-      });
-      return base;
+// Reset per-prep state whenever plan, preps, or dateKey changes
+useEffect(() => {
+  setPrepData(() => {
+    const base = {};
+    preps.forEach(({ id }) => {
+      const d = plan?.preps?.[id] || {};
+      base[id] = {
+        title: d.title || "",
+        standards: d.standards || [],
+        performanceGoal: d.performanceGoal || "",
+        objective: d.objective || "",
+        prepSteps: Array.isArray(d.prepSteps) ? d.prepSteps : [""],
+        seqSteps: Array.isArray(d.seqSteps) ? d.seqSteps : [""],
+        prepDone: Array.isArray(d.prepDone) ? d.prepDone : [],
+        seqDone: Array.isArray(d.seqDone) ? d.seqDone : [],
+      };
     });
-  }, [plan, preps]);
+    return base;
+  });
+}, [plan, preps, dateKey]);
+
 
   const changeDate = (offset) => {
     let d = new Date(currentDate);
