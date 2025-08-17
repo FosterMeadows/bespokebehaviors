@@ -2,85 +2,28 @@ import React, { useState, useEffect, useContext, useMemo } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  collection, addDoc, updateDoc, doc, serverTimestamp,
-  query, where, orderBy, limit, getDoc, setDoc, getDocs,
-  runTransaction
-} from "firebase/firestore";
-import Select from "react-select";
+import { doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
 import ela8 from "../data/standards/ela8.json";
-
-// Pastel palette
-const PASTEL_COLORS = [
-  { bg: "hsl(200, 60%, 90%)", text: "hsl(200, 50%, 40%)" },
-  { bg: "hsl(160, 60%, 90%)", text: "hsl(160, 50%, 32%)" },
-  { bg: "hsl(40, 80%, 92%)",  text: "hsl(40, 50%, 38%)" },
-  { bg: "hsl(280, 60%, 93%)", text: "hsl(280, 50%, 40%)" },
-  { bg: "hsl(340, 60%, 94%)", text: "hsl(340, 50%, 42%)" },
-];
-
-function useRandomPastel() {
-  const [color, setColor] = useState(null);
-  useEffect(() => {
-    setColor(PASTEL_COLORS[Math.floor(Math.random() * PASTEL_COLORS.length)]);
-    // eslint-disable-next-line
-  }, []);
-  return color || PASTEL_COLORS[0];
-}
+import { formatPrettyDate, formatWeekday, makeDateKey, toLocalDateInputValue } from "../utils/date";
+import useRandomPastel from "../hooks/useRandomPastel";
+import * as plansSvc from "../services/plans";
+import PrepNamesModal from "../components/DailyPlan/PrepNamesModal";
+import PrepView from "../components/DailyPlan/PrepView";
+import PrepEdit from "../components/DailyPlan/PrepEdit";
 
 const PREP_DEFAULTS = [
   { id: "prep1", name: "Regular ELA" },
   { id: "prep2", name: "Honors ELA" }
 ];
 
-function Chevron({ collapsed }) {
-  return (
-    <svg width="18" height="18" className="inline-block ml-2"
-      style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}
-      viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M6 8l4 4 4-4" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-function CopyIcon() {
-  return (
-    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="4" y="6" width="10" height="10" rx="2" fill="#aaa"/>
-      <rect x="7" y="4" width="9" height="12" rx="2" stroke="#aaa" strokeWidth="1.5"/>
-    </svg>
-  );
-}
-function PasteIcon() {
-  return (
-    <svg width="18" height="18" fill="none" className="inline-block ml-2" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="4" y="6" width="10" height="10" rx="2" fill="#34d399"/>
-      <path d="M9 9v3h2V9m0 3v2" stroke="#047857" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-// Helpers
-function formatPrettyDate(d) {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
-}
-function formatWeekday(d) {
-  return d.toLocaleDateString(undefined, { weekday: "long" });
-}
-function makeDateKey(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`; // canonical YYYY-MM-DD for storage/query
-}
-function toLocalDateInputValue(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`; // avoid UTC drift from toISOString()
-}
+// Static standards helpers (no need for hooks)
+const STANDARD_OPTIONS = ela8.map(s => ({ value: s.code, label: `${s.code}: ${s.text}` }));
+const STANDARDS_INDEX = Object.fromEntries(ela8.map(s => [s.code, s]));
 
 export default function DailyPlan() {
   const { user } = useContext(AuthContext);
+  const uid = user?.uid;
+
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -118,7 +61,6 @@ export default function DailyPlan() {
 
   // Data & UI state
   const [loading, setLoading] = useState(true);
-  const [planId, setPlanId] = useState(null);
   const [plan, setPlan] = useState(null);
   const [prepData, setPrepData] = useState({});
   const [saving, setSaving] = useState(false);
@@ -126,18 +68,19 @@ export default function DailyPlan() {
   const [success, setSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Standards options
-  const standardOptions = useMemo(
-    () => ela8.map((s) => ({ value: s.code, label: `${s.code}: ${s.text}` })),
-    []
-  );
+  // success banner auto-clear, with cleanup
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(false), 2000);
+    return () => clearTimeout(t);
+  }, [success]);
 
   // Load user's prep names
   useEffect(() => {
-    if (!user) return;
+    if (!uid) return;
     (async () => {
       try {
-        const tRef = doc(db, "teachers", user.uid);
+        const tRef = doc(db, "teachers", uid);
         const snap = await getDoc(tRef);
         if (snap.exists() && snap.data().prepNames) {
           setPreps(snap.data().prepNames);
@@ -146,7 +89,7 @@ export default function DailyPlan() {
         setPreps(PREP_DEFAULTS);
       }
     })();
-  }, [user]);
+  }, [uid]);
 
   // Update pretty date and weekday when currentDate changes
   useEffect(() => {
@@ -172,45 +115,41 @@ export default function DailyPlan() {
     }
   }, [paramDate]);
 
-  // Load plan for dateKey using deterministic doc ID
+  // Load plan for dateKey (deterministic doc id)
   useEffect(() => {
-    if (!user || !dateKey) return;
+    if (!uid || !dateKey) return;
     setLoading(true);
     (async () => {
-      const ref = doc(db, "teachers", user.uid, "dailyPlans", dateKey);
-      const snap = await getDoc(ref);
-      let planData = null;
-      if (snap.exists()) {
-        planData = snap.data();
+      try {
+        const planData = await plansSvc.getDailyPlan(uid, dateKey);
+        setPlan(planData);
+        setIsEditing(planData == null); // new = editing by default
+      } finally {
+        setLoading(false);
       }
-      setPlanId(dateKey); // deterministic
-      setPlan(planData);
-      setIsEditing(planData == null); // new = editing by default
-      setLoading(false);
     })();
-  }, [user, dateKey]);
+  }, [uid, dateKey]);
 
-// Reset per-prep state whenever plan, preps, or dateKey changes
-useEffect(() => {
-  setPrepData(() => {
-    const base = {};
-    preps.forEach(({ id }) => {
-      const d = plan?.preps?.[id] || {};
-      base[id] = {
-        title: d.title || "",
-        standards: d.standards || [],
-        performanceGoal: d.performanceGoal || "",
-        objective: d.objective || "",
-        prepSteps: Array.isArray(d.prepSteps) ? d.prepSteps : [""],
-        seqSteps: Array.isArray(d.seqSteps) ? d.seqSteps : [""],
-        prepDone: Array.isArray(d.prepDone) ? d.prepDone : [],
-        seqDone: Array.isArray(d.seqDone) ? d.seqDone : [],
-      };
+  // Reset per-prep state whenever plan, preps, or dateKey changes
+  useEffect(() => {
+    setPrepData(() => {
+      const base = {};
+      preps.forEach(({ id }) => {
+        const d = plan?.preps?.[id] || {};
+        base[id] = {
+          title: d.title || "",
+          standards: d.standards || [],
+          performanceGoal: d.performanceGoal || "",
+          objective: d.objective || "",
+          prepSteps: Array.isArray(d.prepSteps) ? d.prepSteps : [""],
+          seqSteps: Array.isArray(d.seqSteps) ? d.seqSteps : [""],
+          prepDone: Array.isArray(d.prepDone) ? d.prepDone : [],
+          seqDone: Array.isArray(d.seqDone) ? d.seqDone : [],
+        };
+      });
+      return base;
     });
-    return base;
-  });
-}, [plan, preps, dateKey]);
-
+  }, [plan, preps, dateKey]);
 
   const changeDate = (offset) => {
     let d = new Date(currentDate);
@@ -221,14 +160,12 @@ useEffect(() => {
   // Build editable fields payload (does not touch prepDone/seqDone)
   const buildEditableFieldUpdates = () => {
     const updates = {};
-    // top-level fields
     updates["dateKey"] = dateKey;
     updates["date"] = today;
     updates["weekday"] = weekday;
     updates["isPublic"] = true;
     updates["updatedAt"] = serverTimestamp();
 
-    // per-prep editable fields only
     preps.forEach(({ id }) => {
       updates[`preps.${id}.title`] = prepData[id]?.title || "";
       updates[`preps.${id}.standards`] = prepData[id]?.standards || [];
@@ -236,7 +173,6 @@ useEffect(() => {
       updates[`preps.${id}.objective`] = prepData[id]?.objective || "";
       updates[`preps.${id}.prepSteps`] = (prepData[id]?.prepSteps || []).filter(Boolean);
       updates[`preps.${id}.seqSteps`] = (prepData[id]?.seqSteps || []).filter(Boolean);
-      // intentionally NOT writing preps.${id}.prepDone or seqDone here
     });
     return updates;
   };
@@ -245,10 +181,10 @@ useEffect(() => {
   const savePlan = async (e) => {
     e?.preventDefault();
     setError("");
-    if (!user || !planId) return;
+    if (!uid || !dateKey) return;
 
     setSaving(true);
-    const planRef = doc(db, "teachers", user.uid, "dailyPlans", planId);
+    const planRef = doc(db, "teachers", uid, "dailyPlans", dateKey);
 
     try {
       await runTransaction(db, async (tx) => {
@@ -256,7 +192,6 @@ useEffect(() => {
         const now = serverTimestamp();
 
         if (!snap.exists()) {
-          // create new doc with rev = 1
           const base = {
             dateKey,
             date: today,
@@ -267,7 +202,6 @@ useEffect(() => {
             rev: 1,
             preps: {}
           };
-          // set only editable fields and leave done arrays empty
           preps.forEach(({ id }) => {
             base.preps[id] = {
               title: prepData[id]?.title || "",
@@ -276,12 +210,10 @@ useEffect(() => {
               objective: prepData[id]?.objective || "",
               prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
               seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
-              // done arrays intentionally omitted on create; view uses defaults
             };
           });
           tx.set(planRef, base, { merge: false });
         } else {
-          // update existing with rev check and patch fields
           const current = snap.data();
           const currentRev = typeof current.rev === "number" ? current.rev : 0;
           const updates = buildEditableFieldUpdates();
@@ -304,7 +236,6 @@ useEffect(() => {
             objective: prepData[id]?.objective || "",
             prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
             seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
-            // keep prevPrep.prepDone/seqDone as-is
           };
         });
         return next;
@@ -312,7 +243,6 @@ useEffect(() => {
 
       setSuccess(true);
       setIsEditing(false);
-      setTimeout(() => setSuccess(false), 2000);
     } catch (err) {
       console.error("savePlan tx failed", err);
       setError("Save failed, possibly due to a concurrent change. Reload and try again.");
@@ -329,13 +259,11 @@ useEffect(() => {
   const handlePrepNamesSave = async () => {
     setPreps(editPreps);
     setShowPrepEdit(false);
-    if (user) {
-      const tRef = doc(db, "teachers", user.uid);
-      await setDoc(tRef, { prepNames: editPreps }, { merge: true });
+    if (uid) {
+      await plansSvc.savePrepNames(uid, editPreps);
     }
   };
 
-  // ---------- RENDER ----------
   const gradientStyle = {
     minHeight: "100vh",
     width: "100%",
@@ -343,10 +271,6 @@ useEffect(() => {
     transition: "background 0.8s",
     padding: "2.5rem 0",
   };
-
-  function toggleCollapse(prepId) {
-    setCollapsedPreps(cp => ({ ...cp, [prepId]: !cp[prepId] }));
-  }
 
   function handleCopy(id) {
     const data = prepData[id] || {};
@@ -373,461 +297,299 @@ useEffect(() => {
     }));
   }
 
-  // --- VIEW MODE ---
   if (loading) return <div className="p-6 text-center">Loading…</div>;
-  if (!isEditing && plan) {
-    return (
-      <div style={gradientStyle}>
-        <div className="max-w-5xl mx-auto p-6 space-y-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-            <button onClick={() => changeDate(-1)}
-              className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
-            <div className="relative">
-              <h1
-                onClick={() => setShowCalendar(true)}
-                className="cursor-pointer text-2xl font-bold"
-                style={{ color: pastel.text }}
-              >{weekday}, {today}</h1>
-              {showCalendar && (
-                <input
-                  type="date"
-                  value={toLocalDateInputValue(currentDate)}
-                  onChange={e => {
-                    const [y, m, d] = e.target.value.split("-").map(Number);
-                    setCurrentDate(new Date(y, m - 1, d));
-                  }}
-                  onBlur={() => setShowCalendar(false)}
-                  className="absolute top-full mt-1 border rounded shadow-lg p-2"
-                  autoFocus
-                />
-              )}
-            </div>
-            <button onClick={() => changeDate(1)}
-              className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
-          </div>
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={() => setShowPrepEdit(true)}
-              className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
-            >Edit Preps</button>
-            <button
-              onClick={() => setIsEditing(true)}
-              className="px-4 py-1 bg-yellow-400 hover:bg-yellow-500 text-white rounded shadow transition font-semibold"
-            >Edit</button>
-          </div>
-          {preps.map(({ id, name }) => {
-            const d = plan.preps?.[id] || {};
-            const collapsed = collapsedPreps[id];
-            return (
-              <section key={id} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm space-y-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-semibold" style={{ color: pastel.text }}>{name}</h2>
-                  <button
-                    className="ml-2 px-2 py-1 rounded hover:bg-gray-100"
-                    aria-label={collapsed ? "Expand section" : "Collapse section"}
-                    aria-expanded={!collapsed}
-                    onClick={() => toggleCollapse(id)}
-                    style={{ fontSize: 15, color: pastel.text, lineHeight: 1.2 }}
-                  >
-                    <Chevron collapsed={collapsed} />
-                  </button>
-                </div>
-                <div
-                  style={{
-                    maxHeight: collapsed ? 0 : 2000,
-                    opacity: collapsed ? 0 : 1,
-                    overflow: "hidden",
-                    transition: "max-height 0.35s cubic-bezier(0.5,0,0.5,1), opacity 0.22s",
-                  }}
-                >
-                  <div className="font-semibold mb-1" style={{ color: pastel.text }}>Standards</div>
-                  <ul className="list-disc pl-6 space-y-1 mb-4">
-                    {(d.standards || []).map(code => {
-                      const s = ela8.find(x => x.code === code);
-                      return (
-                        <li key={code} className="text-gray-800 flex items-center">
-                          <span
-                            className="rounded px-2 py-0.5 text-xs mr-2 font-mono"
-                            style={{ background: pastel.bg, color: pastel.text, opacity: 0.85 }}
-                          >{code}</span>
-                          {s?.text}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* OBJECTIVES AREA */}
-                  <section
-                    className="mb-4 bg-gray-100 p-4 rounded-xl border border-gray-200 shadow-inner"
-                    style={{ borderLeft: `6px solid ${pastel.bg}` }}
-                  >
-                    <div className="mb-2">
-                      <div className="font-semibold" style={{ color: pastel.text }}>Performance Goal</div>
-                      <div className="text-gray-800">{d.performanceGoal || <span className="italic text-gray-400">None set</span>}</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold" style={{ color: pastel.text }}>Daily Objective</div>
-                      <div className="text-gray-800">{d.objective || <span className="italic text-gray-400">None set</span>}</div>
-                    </div>
-                  </section>
-                  {/* SUB-SECTIONS */}
-                  {(d.prepSteps || []).length > 0 && (
-                    <section className="bg-gray-50 p-3 rounded border border-gray-200 shadow-sm">
-                      <h3 className="font-medium mb-2" style={{ color: pastel.text }}>What do I need?</h3>
-                      <ul className="pl-6 space-y-1">
-                        {(d.prepSteps || []).map((step, i) => (
-                          <li key={i} className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={d.prepDone?.[i] || false}
-                              onChange={async () => {
-                                const updated = [...(d.prepDone || [])];
-                                updated[i] = !updated[i];
-                                await updateDoc(doc(db, "teachers", user.uid, "dailyPlans", planId), {
-                                  [`preps.${id}.prepDone`]: updated
-                                });
-                                setPlan(p => ({
-                                  ...p,
-                                  preps: { ...p.preps, [id]: { ...p.preps[id], prepDone: updated } }
-                                }));
-                              }}
-                              className="mr-2 scale-110 accent-gray-600"
-                              aria-label={`Mark prep item ${i + 1} ${d.prepDone?.[i] ? "incomplete" : "complete"}`}
-                            />
-                            <span className={d.prepDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  )}
-                  {(d.seqSteps || []).length > 0 && (
-                    <section className="bg-gray-50 p-3 rounded border border-gray-200 shadow-sm mt-4">
-                      <h3 className="font-medium mb-2" style={{ color: pastel.text }}>Planned Lesson Sequence</h3>
-                      <ul className="pl-6 space-y-1">
-                        {(d.seqSteps || []).map((step, i) => (
-                          <li key={i} className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={d.seqDone?.[i] || false}
-                              onChange={async () => {
-                                const updated = [...(d.seqDone || [])];
-                                updated[i] = !updated[i];
-                                await updateDoc(doc(db, "teachers", user.uid, "dailyPlans", planId), {
-                                  [`preps.${id}.seqDone`]: updated
-                                });
-                                setPlan(p => ({
-                                  ...p,
-                                  preps: { ...p.preps, [id]: { ...p.preps[id], seqDone: updated } }
-                                }));
-                              }}
-                              className="mr-2 scale-110 accent-gray-600"
-                              aria-label={`Mark sequence item ${i + 1} ${d.seqDone?.[i] ? "incomplete" : "complete"}`}
-                            />
-                            <span className={d.seqDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  )}
-                </div>
-              </section>
-            );
-          })}
-          {/* Prep Names Modal */}
-          {showPrepEdit && (
-            <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-xl p-6 min-w-[320px]">
-                <h2 className="text-lg font-bold mb-4">Edit Preps</h2>
-                {editPreps.map((p, idx) => (
-                  <div key={p.id} className="flex items-center space-x-2 mb-2">
-                    <input
-                      className="border rounded p-1 flex-1"
-                      value={p.name}
-                      onChange={e => {
-                        const arr = [...editPreps];
-                        arr[idx].name = e.target.value;
-                        setEditPreps(arr);
-                      }}
-                    />
-                    {editPreps.length > 1 && (
-                      <button
-                        onClick={() => {
-                          const arr = [...editPreps];
-                          arr.splice(idx, 1);
-                          setEditPreps(arr);
-                        }}
-                        className="px-2 py-1 bg-red-300 hover:bg-red-400 rounded"
-                      >✕</button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  onClick={() => setEditPreps([...editPreps, { id: `prep${Date.now()}`, name: "" }])}
-                  className="px-4 py-2 bg-green-300 hover:bg-green-400 rounded transition mb-3"
-                >+ Add Prep</button>
-                <div className="flex justify-end space-x-2">
-                  <button onClick={() => setShowPrepEdit(false)} className="px-4 py-1 bg-gray-300 rounded">Cancel</button>
-                  <button onClick={handlePrepNamesSave} className="px-4 py-1 bg-blue-500 text-white rounded">Save</button>
-                </div>
-              </div>
-            </div>
+
+  // Build branch content (view vs edit)
+  const content = !isEditing && plan ? (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+        <button
+          onClick={() => changeDate(-1)}
+          className="text-xl text-gray-400 hover:text-gray-700 transition"
+          aria-label="Previous day"
+        >
+          ←
+        </button>
+
+        <div className="relative">
+          <h1
+            onClick={() => setShowCalendar(true)}
+            className="cursor-pointer text-2xl font-bold"
+            style={{ color: pastel.text }}
+          >
+            {weekday}, {today}
+          </h1>
+
+          {showCalendar && (
+            <input
+              type="date"
+              value={toLocalDateInputValue(currentDate)}
+              onChange={e => {
+                const v = e.target.value;
+                if (!v) return;
+                const [y, m, d] = v.split("-").map(Number);
+                if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) {
+                  setCurrentDate(new Date(y, m - 1, d));
+                  setShowCalendar(false);
+                }
+              }}
+              onBlur={() => setShowCalendar(false)}
+              className="absolute top-full mt-1 border rounded shadow-lg p-2"
+              autoFocus
+            />
           )}
         </div>
-      </div>
-    );
-  }
 
-  // --- EDIT MODE ---
+        <button
+          onClick={() => changeDate(1)}
+          className="text-xl text-gray-400 hover:text-gray-700 transition"
+          aria-label="Next day"
+        >
+          →
+        </button>
+      </div>
+
+      <div className="flex justify-end space-x-3">
+        <button
+          onClick={() => setShowPrepEdit(true)}
+          className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
+        >
+          Edit Preps
+        </button>
+        <button
+          onClick={() => setIsEditing(true)}
+          className="px-4 py-1 bg-yellow-400 hover:bg-yellow-500 text-white rounded shadow transition font-semibold"
+        >
+          Edit
+        </button>
+      </div>
+
+      {preps.map(({ id, name }) => (
+        <PrepView
+          key={id}
+          id={id}
+          name={name}
+          pastel={pastel}
+          prep={(plan.preps || {})[id] || {}}
+          standardsIndex={STANDARDS_INDEX}
+          collapsed={!!collapsedPreps[id]}
+          onToggleCollapse={(pid) =>
+            setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))
+          }
+          onTogglePrep={async (pid, i) => {
+            const d = (plan.preps || {})[pid] || {};
+            const updated = [...(d.prepDone || [])];
+            updated[i] = !updated[i];
+            await plansSvc.updatePrepDone(uid, dateKey, pid, updated);
+            setPlan(p => ({
+              ...p,
+              preps: { ...p.preps, [pid]: { ...d, prepDone: updated } }
+            }));
+          }}
+          onToggleSeq={async (pid, i) => {
+            const d = (plan.preps || {})[pid] || {};
+            const updated = [...(d.seqDone || [])];
+            updated[i] = !updated[i];
+            await plansSvc.updateSeqDone(uid, dateKey, pid, updated);
+            setPlan(p => ({
+              ...p,
+              preps: { ...p.preps, [pid]: { ...d, seqDone: updated } }
+            }));
+          }}
+        />
+      ))}
+    </div>
+  ) : (
+    <form onSubmit={savePlan} className="space-y-8">
+      <div className="flex justify-between items-center pb-2 border-b border-gray-200">
+        <button
+          onClick={() => changeDate(-1)}
+          className="text-xl text-gray-400 hover:text-gray-700 transition"
+          aria-label="Previous day"
+        >
+          ←
+        </button>
+        <h1 className="text-2xl font-bold" style={{ color: pastel.text }}>
+          Daily Plan - {weekday}, {today}
+        </h1>
+        <button
+          onClick={() => changeDate(1)}
+          className="text-xl text-gray-400 hover:text-gray-700 transition"
+          aria-label="Next day"
+        >
+          →
+        </button>
+      </div>
+
+      <div className="flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={() => setShowPrepEdit(true)}
+          className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
+        >
+          Edit Preps
+        </button>
+      </div>
+
+      {preps.map(({ id, name }) => {
+        const data = prepData[id] || {};
+        const collapsed = !!collapsedPreps[id];
+
+        const isCopy =
+          prepClipboard &&
+          (data.standards || []).toString() === (prepClipboard.standards || []).toString() &&
+          (data.performanceGoal || "") === (prepClipboard.performanceGoal || "") &&
+          (data.objective || "") === (prepClipboard.objective || "") &&
+          JSON.stringify(data.prepSteps || []) === JSON.stringify(prepClipboard?.prepSteps || []) &&
+          JSON.stringify(data.seqSteps || []) === JSON.stringify(prepClipboard?.seqSteps || []);
+
+        const canPaste = !!prepClipboard && !isCopy;
+
+        return (
+          <PrepEdit
+            key={id}
+            id={id}
+            name={name}
+            pastel={pastel}
+            data={data}
+            standardOptions={STANDARD_OPTIONS}
+            collapsed={collapsed}
+            canPaste={canPaste}
+            onToggleCollapse={(pid) =>
+              setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))
+            }
+            onCopy={handleCopy}
+            onPaste={handlePaste}
+            onChangeTitle={(pid, value) =>
+              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], title: value } }))
+            }
+            onChangePerformanceGoal={(pid, value) =>
+              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], performanceGoal: value } }))
+            }
+            onChangeObjective={(pid, value) =>
+              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], objective: value } }))
+            }
+            onChangeStandards={(pid, values) =>
+              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], standards: values } }))
+            }
+            onEditPrepStep={(pid, i, value) =>
+              setPrepData(pd => {
+                const arr = [...(pd[pid]?.prepSteps || [])];
+                arr[i] = value;
+                return { ...pd, [pid]: { ...pd[pid], prepSteps: arr } };
+              })
+            }
+            onRemovePrepStep={(pid, i) =>
+              setPrepData(pd => {
+                const arr = (pd[pid]?.prepSteps || []).filter((_, j) => j !== i);
+                const chk = (pd[pid]?.prepDone || []).filter((_, j) => j !== i);
+                return {
+                  ...pd,
+                  [pid]: { ...pd[pid], prepSteps: arr.length ? arr : [""], prepDone: chk.length ? chk : [] }
+                };
+              })
+            }
+            onAddPrepStep={(pid) =>
+              setPrepData(pd => ({
+                ...pd,
+                [pid]: {
+                  ...pd[pid],
+                  prepSteps: [...(pd[pid]?.prepSteps || []), ""],
+                  prepDone: [...(pd[pid]?.prepDone || []), false]
+                }
+              }))
+            }
+            onEditSeqStep={(pid, i, value) =>
+              setPrepData(pd => {
+                const arr = [...(pd[pid]?.seqSteps || [])];
+                arr[i] = value;
+                return { ...pd, [pid]: { ...pd[pid], seqSteps: arr } };
+              })
+            }
+            onRemoveSeqStep={(pid, i) =>
+              setPrepData(pd => {
+                const arr = (pd[pid]?.seqSteps || []).filter((_, j) => j !== i);
+                const chk = (pd[pid]?.seqDone || []).filter((_, j) => j !== i);
+                return {
+                  ...pd,
+                  [pid]: { ...pd[pid], seqSteps: arr.length ? arr : [""], seqDone: chk.length ? chk : [] }
+                };
+              })
+            }
+            onAddSeqStep={(pid) =>
+              setPrepData(pd => ({
+                ...pd,
+                [pid]: {
+                  ...pd[pid],
+                  seqSteps: [...(pd[pid]?.seqSteps || []), ""],
+                  seqDone: [...(pd[pid]?.seqDone || []), false]
+                }
+              }))
+            }
+            /* Reorder handlers (for drag-and-drop later) */
+            onReorderPrepStep={(pid, from, to) =>
+              setPrepData(pd => {
+                const steps = [...(pd[pid]?.prepSteps || [])];
+                const done = [...(pd[pid]?.prepDone || [])];
+                if (from < 0 || to < 0 || from >= steps.length || to >= steps.length) return pd;
+                const [s] = steps.splice(from, 1);
+                steps.splice(to, 0, s);
+                const [d] = done.splice(from, 1);
+                done.splice(to, 0, d);
+                return { ...pd, [pid]: { ...pd[pid], prepSteps: steps, prepDone: done } };
+              })
+            }
+            onReorderSeqStep={(pid, from, to) =>
+              setPrepData(pd => {
+                const steps = [...(pd[pid]?.seqSteps || [])];
+                const done = [...(pd[pid]?.seqDone || [])];
+                if (from < 0 || to < 0 || from >= steps.length || to >= steps.length) return pd;
+                const [s] = steps.splice(from, 1);
+                steps.splice(to, 0, s);
+                const [d] = done.splice(from, 1);
+                done.splice(to, 0, d);
+                return { ...pd, [pid]: { ...pd[pid], seqSteps: steps, seqDone: done } };
+              })
+            }
+          />
+        );
+      })}
+
+      {error && (
+        <p className="text-red-600 font-semibold" aria-live="polite">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p className="text-green-600 font-semibold" aria-live="polite">
+          Saved!
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="px-8 py-2 bg-gray-700 hover:bg-gray-900 text-white rounded-lg font-bold shadow transition"
+      >
+        {saving ? "Saving..." : "Save"}
+      </button>
+    </form>
+  );
+
+  // Single wrapper, single modal
   return (
     <div style={gradientStyle}>
-      <div className="max-w-5xl mx-auto p-6 space-y-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
-        <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-          <button onClick={() => changeDate(-1)}
-            className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
-          <h1 className="text-2xl font-bold" style={{ color: pastel.text }}>Daily Plan - {weekday}, {today}</h1>
-          <button onClick={() => changeDate(1)}
-            className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
-        </div>
-        <div className="flex justify-end mb-2">
-          <button
-            onClick={() => { setShowPrepEdit(true); }}
-            className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
-          >Edit Preps</button>
-        </div>
-        <form onSubmit={savePlan} className="space-y-8">
-          {preps.map(({ id, name }) => {
-            const collapsed = collapsedPreps[id];
-            const isCopy = prepClipboard &&
-              (prepData[id]?.standards || []).toString() === (prepClipboard.standards || []).toString() &&
-              (prepData[id]?.performanceGoal || "") === (prepClipboard.performanceGoal || "") &&
-              (prepData[id]?.objective || "") === (prepClipboard.objective || "") &&
-              JSON.stringify(prepData[id]?.prepSteps || []) === JSON.stringify(prepClipboard?.prepSteps || []) &&
-              JSON.stringify(prepData[id]?.seqSteps || []) === JSON.stringify(prepClipboard?.seqSteps || []);
-
-            return (
-              <section key={id} className="bg-white p-5 rounded-lg border border-gray-200 shadow-md space-y-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-semibold" style={{ color: pastel.text }}>{name}</h2>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(id)}
-                      className="px-2 py-1 rounded hover:bg-gray-100"
-                      title="Copy prep"
-                      aria-label="Copy prep"
-                    >
-                      <CopyIcon />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePaste(id)}
-                      className={`px-2 py-1 rounded hover:bg-gray-100 ${(!prepClipboard || isCopy) ? "opacity-50 pointer-events-none" : ""}`}
-                      title="Paste to prep"
-                      aria-label="Paste to prep"
-                      disabled={!prepClipboard || isCopy}
-                    >
-                      <PasteIcon />
-                    </button>
-                    <button
-                      className="ml-2 px-2 py-1 rounded hover:bg-gray-100"
-                      aria-label={collapsed ? "Expand section" : "Collapse section"}
-                      aria-expanded={!collapsed}
-                      type="button"
-                      onClick={e => { e.preventDefault(); toggleCollapse(id); }}
-                      style={{ fontSize: 15, color: pastel.text, lineHeight: 1.2 }}
-                    >
-                      <Chevron collapsed={collapsed} />
-                    </button>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    maxHeight: collapsed ? 0 : 2000,
-                    opacity: collapsed ? 0 : 1,
-                    overflow: "hidden",
-                    transition: "max-height 0.35s cubic-bezier(0.5,0,0.5,1), opacity 0.22s",
-                  }}
-                >
-                  <div className="mb-2">
-                    <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Lesson Title</label>
-                    <input
-                      type="text"
-                      className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
-                      value={prepData[id]?.title || ""}
-                      onChange={e => setPrepData(pd => ({ ...pd, [id]: { ...pd[id], title: e.target.value } }))}
-                    />
-                  </div>
-                  <div className="mb-2">
-                    <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Standards</label>
-                    <Select
-                      isMulti
-                      options={standardOptions}
-                      value={standardOptions.filter(o => (prepData[id]?.standards || []).includes(o.value))}
-                      onChange={opts => setPrepData(pd => ({
-                        ...pd,
-                        [id]: { ...pd[id], standards: opts ? opts.map(x => x.value) : [] }
-                      }))}
-                      className="react-select-container"
-                      classNamePrefix="react-select"
-                    />
-                  </div>
-                  {/* PERFORMANCE GOAL & OBJECTIVE CARD */}
-                  <section
-                    className="mb-4 bg-gray-100 p-4 rounded-xl border border-gray-200 shadow-inner"
-                    style={{ borderLeft: `6px solid ${pastel.bg}` }}
-                  >
-                    <div className="mb-2">
-                      <label className="block font-semibold mb-1" style={{ color: pastel.text }}>Performance Goal</label>
-                      <input
-                        type="text"
-                        className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
-                        value={prepData[id]?.performanceGoal || ""}
-                        onChange={e => setPrepData(pd => ({ ...pd, [id]: { ...pd[id], performanceGoal: e.target.value } }))}
-                        placeholder="End product, assessment, or measurable outcome"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold mb-1" style={{ color: pastel.text }}>Daily Objective</label>
-                      <input
-                        type="text"
-                        className="w-full border rounded p-2 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-gray-300"
-                        value={prepData[id]?.objective || ""}
-                        onChange={e => setPrepData(pd => ({ ...pd, [id]: { ...pd[id], objective: e.target.value } }))}
-                        placeholder="We will..."
-                      />
-                    </div>
-                  </section>
-                  {/* SUB-SECTIONS */}
-                  <div className="mb-2">
-                    <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>What do I need?</label>
-                    {(prepData[id]?.prepSteps || [""]).map((step, i) => (
-                      <div key={i} className="flex items-start space-x-2 mb-2">
-                        <textarea
-                          className="flex-1 border rounded p-2 resize-none overflow-hidden bg-gray-50 focus:ring-2 focus:ring-gray-300"
-                          rows={1}
-                          value={step}
-                          onChange={e => {
-                            const arr = [...(prepData[id]?.prepSteps || [])];
-                            arr[i] = e.target.value;
-                            setPrepData(pd => ({ ...pd, [id]: { ...pd[id], prepSteps: arr } }));
-                          }}
-                          onInput={e => {
-                            e.target.style.height = 'auto';
-                            e.target.style.height = `${e.target.scrollHeight}px`;
-                          }}
-                          placeholder={`Thing ${i + 1}`}
-                        />
-                        <button type="button" onClick={() => {
-                          const arr = (prepData[id]?.prepSteps || []).filter((_, j) => j !== i);
-                          const chk = (prepData[id]?.prepDone || []).filter((_, j) => j !== i);
-                          setPrepData(pd => ({
-                            ...pd,
-                            [id]: { ...pd[id], prepSteps: arr.length ? arr : [""], prepDone: chk.length ? chk : [] }
-                          }));
-                        }} className="px-2 py-1 bg-red-300 hover:bg-red-400 rounded transition">✕</button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={() => {
-                      setPrepData(pd => ({
-                        ...pd,
-                        [id]: {
-                          ...pd[id],
-                          prepSteps: [...(pd[id]?.prepSteps || []), ""],
-                          prepDone: [...(pd[id]?.prepDone || []), false]
-                        }
-                      }));
-                    }} className="px-4 py-2 bg-green-300 hover:bg-green-400 rounded transition mt-2 font-semibold"
-                    >+ Add Thing</button>
-                  </div>
-                  <div className="mb-2 mt-4">
-                    <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Planned Lesson Sequence</label>
-                    {(prepData[id]?.seqSteps || [""]).map((step, i) => (
-                      <div key={i} className="flex items-start space-x-2 mb-2">
-                        <textarea
-                          className="flex-1 border rounded p-2 resize-none overflow-hidden bg-gray-50 focus:ring-2 focus:ring-gray-300"
-                          rows={1}
-                          value={step}
-                          onChange={e => {
-                            const arr = [...(prepData[id]?.seqSteps || [])];
-                            arr[i] = e.target.value;
-                            setPrepData(pd => ({ ...pd, [id]: { ...pd[id], seqSteps: arr } }));
-                          }}
-                          onInput={e => {
-                            e.target.style.height = 'auto';
-                            e.target.style.height = `${e.target.scrollHeight}px`;
-                          }}
-                          placeholder={`Plan ${i + 1}`}
-                        />
-                        <button type="button" onClick={() => {
-                          const arr = (prepData[id]?.seqSteps || []).filter((_, j) => j !== i);
-                          const chk = (prepData[id]?.seqDone || []).filter((_, j) => j !== i);
-                          setPrepData(pd => ({
-                            ...pd,
-                            [id]: { ...pd[id], seqSteps: arr.length ? arr : [""], seqDone: chk.length ? chk : [] }
-                          }));
-                        }} className="px-2 py-1 bg-red-300 hover:bg-red-400 rounded transition">✕</button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={() => {
-                      setPrepData(pd => ({
-                        ...pd,
-                        [id]: {
-                          ...pd[id],
-                          seqSteps: [...(pd[id]?.seqSteps || []), ""],
-                          seqDone: [...(pd[id]?.seqDone || []), false]
-                        }
-                      }));
-                    }} className="px-4 py-2 bg-green-300 hover:bg-green-400 rounded transition mt-2 font-semibold"
-                    >+ Add Plan</button>
-                  </div>
-                </div>
-              </section>
-            );
-          })}
-          {error && <p className="text-red-600 font-semibold">{error}</p>}
-          {success && <p className="text-green-600 font-semibold">Saved!</p>}
-          <button type="submit" disabled={saving}
-            className="px-8 py-2 bg-gray-700 hover:bg-gray-900 text-white rounded-lg font-bold shadow transition"
-          >{saving ? 'Saving...' : 'Save'}</button>
-        </form>
-        {showPrepEdit && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 min-w-[320px]">
-              <h2 className="text-lg font-bold mb-4">Edit Preps</h2>
-              {editPreps.map((p, idx) => (
-                <div key={p.id} className="flex items-center space-x-2 mb-2">
-                  <input
-                    className="border rounded p-1 flex-1"
-                    value={p.name}
-                    onChange={e => {
-                      const arr = [...editPreps];
-                      arr[idx].name = e.target.value;
-                      setEditPreps(arr);
-                    }}
-                  />
-                  {editPreps.length > 1 && (
-                    <button
-                      onClick={() => {
-                        const arr = [...editPreps];
-                        arr.splice(idx, 1);
-                        setEditPreps(arr);
-                      }}
-                      className="px-2 py-1 bg-red-300 hover:bg-red-400 rounded"
-                    >✕</button>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={() => setEditPreps([...editPreps, { id: `prep${Date.now()}`, name: "" }])}
-                className="px-4 py-2 bg-green-300 hover:bg-green-400 rounded transition mb-3"
-              >+ Add Prep</button>
-              <div className="flex justify-end space-x-2">
-                <button onClick={() => setShowPrepEdit(false)} className="px-4 py-1 bg-gray-300 rounded">Cancel</button>
-                <button onClick={handlePrepNamesSave} className="px-4 py-1 bg-blue-500 text-white rounded">Save</button>
-              </div>
-            </div>
-          </div>
-        )}
+      <div className="max-w-5xl mx-auto p-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
+        {content}
       </div>
+
+      <PrepNamesModal
+        isOpen={showPrepEdit}
+        editPreps={editPreps}
+        setEditPreps={setEditPreps}
+        onClose={() => setShowPrepEdit(false)}
+        onSave={handlePrepNamesSave}
+      />
     </div>
   );
 }
