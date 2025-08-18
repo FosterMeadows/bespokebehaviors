@@ -8,6 +8,7 @@ import DailyPlan from "./pages/DailyPlan.jsx";
 import GradeCalculator from "./pages/GradeCalculator.jsx";
 import TeacherNotes from "./pages/TeacherNotes.jsx";
 import MegaChecklist from "./pages/MegaChecklist.jsx";
+import WeekAtAGlance from "./pages/WeekAtAGlance";
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/gradecalculator" element={<GradeCalculator />} />
         <Route path="/teachernotes" element={<TeacherNotes />} />
         <Route path="/megachecklist" element={<MegaChecklist />} />
+        <Route path="/week" element={<WeekAtAGlance />} />
         <Route path="*" element={<Navigate to="/log" replace />} />
       </Routes>
     </Layout>

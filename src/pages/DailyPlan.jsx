@@ -10,6 +10,7 @@ import * as plansSvc from "../services/plans";
 import PrepNamesModal from "../components/DailyPlan/PrepNamesModal";
 import PrepView from "../components/DailyPlan/PrepView";
 import PrepEdit from "../components/DailyPlan/PrepEdit";
+import { Link } from "react-router-dom";
 
 const PREP_DEFAULTS = [
   { id: "prep1", name: "Regular ELA" },
@@ -58,6 +59,14 @@ export default function DailyPlan() {
   const dateKey = useMemo(() => makeDateKey(currentDate), [currentDate]);
   const [today, setToday] = useState(formatPrettyDate(currentDate));
   const [weekday, setWeekday] = useState(formatWeekday(currentDate));
+
+  // --- NEW: week link param for router ---
+  const dateParam = useMemo(() => {
+    const m = String(currentDate.getMonth() + 1).padStart(2, "0");
+    const d = String(currentDate.getDate()).padStart(2, "0");
+    const y = currentDate.getFullYear();
+    return `${m}.${d}.${y}`;
+  }, [currentDate]);
 
   // Data & UI state
   const [loading, setLoading] = useState(true);
@@ -350,6 +359,14 @@ export default function DailyPlan() {
       </div>
 
       <div className="flex justify-end space-x-3">
+        {/* NEW: Week link */}
+        <Link
+          to={`/week?date=${dateParam}`}
+          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
+        >
+          Week
+        </Link>
+
         <button
           onClick={() => setShowPrepEdit(true)}
           className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
@@ -421,7 +438,15 @@ export default function DailyPlan() {
         </button>
       </div>
 
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end mb-2 space-x-2">
+        {/* NEW: Week link */}
+        <Link
+          to={`/week?date=${dateParam}`}
+          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
+        >
+          Week
+        </Link>
+
         <button
           type="button"
           onClick={() => setShowPrepEdit(true)}
@@ -521,8 +546,8 @@ export default function DailyPlan() {
                 ...pd,
                 [pid]: {
                   ...pd[pid],
-                  seqSteps: [...(pd[pid]?.seqSteps || []), ""],
-                  seqDone: [...(pd[pid]?.seqDone || []), false]
+                  seqSteps: [...(pd[pid]?.seqSteps || [])], // keep existing
+                  seqDone: [...(pd[pid]?.seqDone || [])],   // keep existing
                 }
               }))
             }
