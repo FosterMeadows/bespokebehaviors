@@ -546,8 +546,8 @@ export default function DailyPlan() {
                 ...pd,
                 [pid]: {
                   ...pd[pid],
-                  seqSteps: [...(pd[pid]?.seqSteps || [])], // keep existing
-                  seqDone: [...(pd[pid]?.seqDone || [])],   // keep existing
+      seqSteps: [...(pd[pid]?.seqSteps || []), ""],
+      seqDone:  [...(pd[pid]?.seqDone  || []), false],
                 }
               }))
             }
