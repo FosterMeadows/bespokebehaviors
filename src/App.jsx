@@ -36,6 +36,8 @@ export default function App() {
         <Route path="/teachernotes" element={<TeacherNotes />} />
         <Route path="/megachecklist" element={<MegaChecklist />} />
         <Route path="/week" element={<WeekAtAGlance />} />
+        <Route path="/share/:token" element={<SharePage />} />
+
         <Route path="*" element={<Navigate to="/log" replace />} />
       </Routes>
     </Layout>

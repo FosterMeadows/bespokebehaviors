@@ -9,14 +9,119 @@ import {
   orderBy,
   getDocs,
   serverTimestamp,
+  // NEW:
+  doc,
+  getDoc,
+  updateDoc,
 } from "firebase/firestore";
 
 export default function BehaviorLog() {
   const PUBLIC_UID = "ylP0ToTLlvchPVLRPFLq7KoGVCy1";
 
-
   const { user } = useContext(AuthContext);
 
+  // ====== SHARE-LINK STATE (NEW) ======
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareEnabled, setShareEnabled] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
+
+  // Load current share status on mount or when user changes
+  useEffect(() => {
+    let mounted = true;
+    async function loadShare() {
+      if (!user) return;
+      try {
+        setShareError("");
+        const tRef = doc(db, "teachers", user.uid);
+        const snap = await getDoc(tRef);
+        if (!snap.exists()) return;
+        const data = snap.data() || {};
+        const enabled = !!data.shareEnabled;
+        const token = typeof data.shareToken === "string" ? data.shareToken : "";
+        if (!mounted) return;
+
+        setShareEnabled(enabled);
+        setShareUrl(enabled && token ? `${location.origin}/share/${token}` : "");
+      } catch (e) {
+        if (!mounted) return;
+        setShareError("Could not load share settings.");
+        console.error(e);
+      }
+    }
+    loadShare();
+    return () => {
+      mounted = false;
+    };
+  }, [user]);
+
+  // Enable sharing: create token if empty, set shareEnabled true
+  async function onEnableShare() {
+    if (!user || shareBusy) return;
+    setShareBusy(true);
+    setShareError("");
+    try {
+      const tRef = doc(db, "teachers", user.uid);
+      const snap = await getDoc(tRef);
+      if (!snap.exists()) throw new Error("Teacher doc missing");
+      const data = snap.data() || {};
+      let token = typeof data.shareToken === "string" ? data.shareToken : "";
+
+      if (!token) {
+        // crypto.randomUUID is supported in modern browsers; if not, swap for any UUID impl
+        token = crypto.randomUUID();
+        await updateDoc(tRef, { shareToken: token });
+      }
+      await updateDoc(tRef, { shareEnabled: true });
+
+      setShareEnabled(true);
+      setShareUrl(`${location.origin}/share/${token}`);
+    } catch (e) {
+      console.error(e);
+      setShareError("Failed to enable sharing.");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  // Disable sharing: just flip the boolean
+  async function onDisableShare() {
+    if (!user || shareBusy) return;
+    setShareBusy(true);
+    setShareError("");
+    try {
+      const tRef = doc(db, "teachers", user.uid);
+      await updateDoc(tRef, { shareEnabled: false });
+      setShareEnabled(false);
+      setShareUrl("");
+    } catch (e) {
+      console.error(e);
+      setShareError("Failed to disable sharing.");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  // Optional: rotate token (kills old link)
+  async function onRotateToken() {
+    if (!user || shareBusy) return;
+    setShareBusy(true);
+    setShareError("");
+    try {
+      const tRef = doc(db, "teachers", user.uid);
+      const newToken = crypto.randomUUID();
+      await updateDoc(tRef, { shareToken: newToken, shareEnabled: true });
+      setShareEnabled(true);
+      setShareUrl(`${location.origin}/share/${newToken}`);
+    } catch (e) {
+      console.error(e);
+      setShareError("Failed to rotate link.");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  // ====== EXISTING STATE BELOW ======
 
   // Search & selection
   const [studentName, setStudentName] = useState("");
@@ -151,6 +256,57 @@ export default function BehaviorLog() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-8">
       <h1 className="text-2xl font-semibold text-gray-800">Behavior Log</h1>
+
+      {/* NEW: Share your plans panel */}
+      {user && (
+        <div className="p-4 bg-indigo-50 rounded-lg space-y-3 border border-indigo-100">
+          <h2 className="text-lg font-semibold text-gray-800">Share your plans</h2>
+          <p className="text-sm text-gray-600">
+            Create a read-only link for admins. They can view your daily plans; they cannot edit.
+          </p>
+          {shareError && <p className="text-sm text-red-600">{shareError}</p>}
+          <div className="flex flex-wrap gap-2">
+            {!shareEnabled ? (
+              <button
+                onClick={onEnableShare}
+                disabled={shareBusy}
+                className="px-3 py-2 rounded-lg bg-indigo-600 text-white disabled:opacity-60"
+              >
+                {shareBusy ? "Enabling…" : "Enable share link"}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={onDisableShare}
+                  disabled={shareBusy}
+                  className="px-3 py-2 rounded-lg bg-gray-200 text-gray-800 disabled:opacity-60"
+                >
+                  {shareBusy ? "Disabling…" : "Disable"}
+                </button>
+                <button
+                  onClick={onRotateToken}
+                  disabled={shareBusy}
+                  className="px-3 py-2 rounded-lg bg-white border border-gray-300 disabled:opacity-60"
+                  title="Invalidate the old link and create a new one"
+                >
+                  {shareBusy ? "Rotating…" : "Rotate link"}
+                </button>
+              </>
+            )}
+          </div>
+          {shareEnabled && shareUrl && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Share URL</label>
+              <input
+                value={shareUrl}
+                readOnly
+                onFocus={(e) => e.currentTarget.select()}
+                className="w-full border rounded-lg p-2 bg-white"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Top Controls: Hot list + Search */}
       <div className="p-4 bg-blue-50 rounded-lg space-y-6">
