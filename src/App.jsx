@@ -9,6 +9,7 @@ import GradeCalculator from "./pages/GradeCalculator.jsx";
 import TeacherNotes from "./pages/TeacherNotes.jsx";
 import MegaChecklist from "./pages/MegaChecklist.jsx";
 import WeekAtAGlance from "./pages/WeekAtAGlance";
+import SharePage from "./components/SharePage.jsx"
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
