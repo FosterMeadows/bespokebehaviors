@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useContext, useMemo } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
-import { useLocation, useNavigate } from "react-router-dom";
-import { doc, getDoc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { useLocation, useNavigate, Link } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
 import ela8 from "../data/standards/ela8.json";
 import { formatPrettyDate, formatWeekday, makeDateKey, toLocalDateInputValue } from "../utils/date";
 import useRandomPastel from "../hooks/useRandomPastel";
@@ -10,7 +10,6 @@ import * as plansSvc from "../services/plans";
 import PrepNamesModal from "../components/DailyPlan/PrepNamesModal";
 import PrepView from "../components/DailyPlan/PrepView";
 import PrepEdit from "../components/DailyPlan/PrepEdit";
-import { Link } from "react-router-dom";
 
 const PREP_DEFAULTS = [
   { id: "prep1", name: "Regular ELA" },
@@ -173,7 +172,6 @@ export default function DailyPlan() {
     updates["date"] = today;
     updates["weekday"] = weekday;
     updates["isPublic"] = true;
-    updates["updatedAt"] = serverTimestamp();
 
     preps.forEach(({ id }) => {
       updates[`preps.${id}.title`] = prepData[id]?.title || "";
@@ -186,50 +184,39 @@ export default function DailyPlan() {
     return updates;
   };
 
-  // Save using transaction with revision guard
+  // Save using service helpers: init or update (no manual transactions)
   const savePlan = async (e) => {
     e?.preventDefault();
     setError("");
     if (!uid || !dateKey) return;
 
     setSaving(true);
-    const planRef = doc(db, "teachers", uid, "dailyPlans", dateKey);
-
     try {
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(planRef);
-        const now = serverTimestamp();
-
-        if (!snap.exists()) {
-          const base = {
-            dateKey,
-            date: today,
-            weekday,
-            isPublic: true,
-            createdAt: now,
-            updatedAt: now,
-            rev: 1,
-            preps: {}
+      if (!plan) {
+        // Create brand-new document
+        const base = {
+          dateKey,
+          date: today,
+          weekday,
+          isPublic: true,
+          preps: {}
+        };
+        preps.forEach(({ id }) => {
+          base.preps[id] = {
+            title: prepData[id]?.title || "",
+            standards: prepData[id]?.standards || [],
+            performanceGoal: prepData[id]?.performanceGoal || "",
+            objective: prepData[id]?.objective || "",
+            prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
+            seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
           };
-          preps.forEach(({ id }) => {
-            base.preps[id] = {
-              title: prepData[id]?.title || "",
-              standards: prepData[id]?.standards || [],
-              performanceGoal: prepData[id]?.performanceGoal || "",
-              objective: prepData[id]?.objective || "",
-              prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
-              seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
-            };
-          });
-          tx.set(planRef, base, { merge: false });
-        } else {
-          const current = snap.data();
-          const currentRev = typeof current.rev === "number" ? current.rev : 0;
-          const updates = buildEditableFieldUpdates();
-          updates["rev"] = currentRev + 1;
-          tx.update(planRef, updates);
-        }
-      });
+        });
+        await plansSvc.initDailyPlan(uid, dateKey, base);
+      } else {
+        // Update only intended fields
+        const updates = buildEditableFieldUpdates();
+        await plansSvc.updateDailyPlan(uid, dateKey, updates);
+      }
 
       // reflect local plan with patched fields, but keep any done arrays from current plan
       setPlan((prev) => {
@@ -253,7 +240,7 @@ export default function DailyPlan() {
       setSuccess(true);
       setIsEditing(false);
     } catch (err) {
-      console.error("savePlan tx failed", err);
+      console.error("savePlan failed", err);
       setError("Save failed, possibly due to a concurrent change. Reload and try again.");
     } finally {
       setSaving(false);
@@ -362,7 +349,7 @@ export default function DailyPlan() {
         {/* NEW: Week link */}
         <Link
           to={`/week?date=${dateParam}`}
-          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
+          className="px-3 py-1 bg-gray-2 00 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
         >
           Week
         </Link>
@@ -546,8 +533,8 @@ export default function DailyPlan() {
                 ...pd,
                 [pid]: {
                   ...pd[pid],
-      seqSteps: [...(pd[pid]?.seqSteps || []), ""],
-      seqDone:  [...(pd[pid]?.seqDone  || []), false],
+                  seqSteps: [...(pd[pid]?.seqSteps || []), ""],
+                  seqDone:  [...(pd[pid]?.seqDone  || []), false],
                 }
               }))
             }

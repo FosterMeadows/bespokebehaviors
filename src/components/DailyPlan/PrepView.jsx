@@ -12,6 +12,12 @@ export default function PrepView({
   onTogglePrep,
   onToggleSeq,
 }) {
+  const standards = Array.isArray(prep.standards) ? prep.standards : [];
+  const prepSteps = Array.isArray(prep.prepSteps) ? prep.prepSteps : [];
+  const seqSteps = Array.isArray(prep.seqSteps) ? prep.seqSteps : [];
+  const prepDone = Array.isArray(prep.prepDone) ? prep.prepDone : [];
+  const seqDone = Array.isArray(prep.seqDone) ? prep.seqDone : [];
+
   return (
     <section className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm space-y-3">
       {/* Header with prep name and lesson title */}
@@ -35,6 +41,7 @@ export default function PrepView({
           aria-expanded={!collapsed}
           onClick={() => onToggleCollapse(id)}
           style={{ fontSize: 15, color: pastel.text, lineHeight: 1.2 }}
+          type="button"
         >
           <Chevron collapsed={collapsed} />
         </button>
@@ -48,27 +55,32 @@ export default function PrepView({
           overflow: "hidden",
           transition: "max-height 0.35s cubic-bezier(0.5,0,0.5,1), opacity 0.22s",
         }}
+        aria-hidden={collapsed}
       >
         {/* Standards */}
         <div className="font-semibold mb-1" style={{ color: pastel.text }}>
           Standards
         </div>
-        <ul className="list-disc pl-6 space-y-1 mb-4">
-          {(prep.standards || []).map(code => {
-            const s = standardsIndex[code];
-            return (
-              <li key={code} className="text-gray-800 flex items-center">
-                <span
-                  className="rounded px-2 py-0.5 text-xs mr-2 font-mono"
-                  style={{ background: pastel.bg, color: pastel.text, opacity: 0.85 }}
-                >
-                  {code}
-                </span>
-                {s?.text}
-              </li>
-            );
-          })}
-        </ul>
+        {standards.length ? (
+          <ul className="list-disc pl-6 space-y-1 mb-4">
+            {standards.map(code => {
+              const s = standardsIndex[code];
+              return (
+                <li key={code} className="text-gray-800 flex items-center">
+                  <span
+                    className="rounded px-2 py-0.5 text-xs mr-2 font-mono"
+                    style={{ background: pastel.bg, color: pastel.text, opacity: 0.85 }}
+                  >
+                    {code}
+                  </span>
+                  {s?.text || <span className="text-gray-500 italic">Unknown standard</span>}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="mb-4 italic text-gray-400">No standards listed</div>
+        )}
 
         {/* Performance/Objective */}
         <section
@@ -94,22 +106,22 @@ export default function PrepView({
         </section>
 
         {/* What do I need? */}
-        {(prep.prepSteps || []).length > 0 && (
+        {prepSteps.length > 0 && (
           <section className="bg-gray-50 p-3 rounded border border-gray-200 shadow-sm">
             <h3 className="font-medium mb-2" style={{ color: pastel.text }}>
               What do I need?
             </h3>
             <ul className="pl-6 space-y-1">
-              {(prep.prepSteps || []).map((step, i) => (
+              {prepSteps.map((step, i) => (
                 <li key={i} className="flex items-center">
                   <input
                     type="checkbox"
-                    checked={prep.prepDone?.[i] || false}
+                    checked={!!prepDone[i]}
                     onChange={() => onTogglePrep(id, i)}
                     className="mr-2 scale-110 accent-gray-600"
-                    aria-label={`Mark prep item ${i + 1} ${prep.prepDone?.[i] ? "incomplete" : "complete"}`}
+                    aria-label={`Mark prep item ${i + 1} ${prepDone[i] ? "incomplete" : "complete"}`}
                   />
-                  <span className={prep.prepDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
+                  <span className={prepDone[i] ? "line-through text-gray-500" : ""}>{step}</span>
                 </li>
               ))}
             </ul>
@@ -117,22 +129,22 @@ export default function PrepView({
         )}
 
         {/* Sequence */}
-        {(prep.seqSteps || []).length > 0 && (
+        {seqSteps.length > 0 && (
           <section className="bg-gray-50 p-3 rounded border border-gray-200 shadow-sm mt-4">
             <h3 className="font-medium mb-2" style={{ color: pastel.text }}>
               Planned Lesson Sequence
             </h3>
             <ul className="pl-6 space-y-1">
-              {(prep.seqSteps || []).map((step, i) => (
+              {seqSteps.map((step, i) => (
                 <li key={i} className="flex items-center">
                   <input
                     type="checkbox"
-                    checked={prep.seqDone?.[i] || false}
+                    checked={!!seqDone[i]}
                     onChange={() => onToggleSeq(id, i)}
                     className="mr-2 scale-110 accent-gray-600"
-                    aria-label={`Mark sequence item ${i + 1} ${prep.seqDone?.[i] ? "incomplete" : "complete"}`}
+                    aria-label={`Mark sequence item ${i + 1} ${seqDone[i] ? "incomplete" : "complete"}`}
                   />
-                  <span className={prep.seqDone?.[i] ? "line-through text-gray-500" : ""}>{step}</span>
+                  <span className={seqDone[i] ? "line-through text-gray-500" : ""}>{step}</span>
                 </li>
               ))}
             </ul>

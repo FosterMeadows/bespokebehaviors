@@ -21,12 +21,15 @@ export default function PrepEdit({
   onAddSeqStep,
   onRemoveSeqStep,
   onEditSeqStep,
-  onReorderPrepStep,   // NEW
-  onReorderSeqStep,    // NEW
+  onReorderPrepStep,
+  onReorderSeqStep,
   onCopy,
   onPaste,
   canPaste,
 }) {
+  const prepSteps = Array.isArray(data.prepSteps) ? data.prepSteps : [""];
+  const seqSteps = Array.isArray(data.seqSteps) ? data.seqSteps : [""];
+
   return (
     <section className="bg-white p-5 rounded-lg border border-gray-200 shadow-md space-y-4">
       <div className="flex items-center justify-between mb-2">
@@ -65,6 +68,7 @@ export default function PrepEdit({
           overflow: "hidden",
           transition: "max-height 0.35s cubic-bezier(0.5,0,0.5,1), opacity 0.22s",
         }}
+        aria-hidden={collapsed}
       >
         <div className="mb-2">
           <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Lesson Title</label>
@@ -116,7 +120,7 @@ export default function PrepEdit({
           <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>What do I need?</label>
 
           <SortableList
-            items={data.prepSteps || [""]}
+            items={prepSteps}
             idPrefix={`${id}-prep`}
             onReorder={(from, to) => onReorderPrepStep(id, from, to)}
             renderItem={(i) => (
@@ -124,7 +128,7 @@ export default function PrepEdit({
                 <textarea
                   className="flex-1 border rounded p-2 resize-none overflow-hidden bg-gray-50 focus:ring-2 focus:ring-gray-300"
                   rows={1}
-                  value={(data.prepSteps || [""])[i] || ""}
+                  value={prepSteps[i] || ""}
                   onChange={e => onEditPrepStep(id, i, e.target.value)}
                   onInput={e => {
                     e.target.style.height = "auto";
@@ -157,7 +161,7 @@ export default function PrepEdit({
           <label className="block text-lg font-medium mb-1" style={{ color: pastel.text }}>Planned Lesson Sequence</label>
 
           <SortableList
-            items={data.seqSteps || [""]}
+            items={seqSteps}
             idPrefix={`${id}-seq`}
             onReorder={(from, to) => onReorderSeqStep(id, from, to)}
             renderItem={(i) => (
@@ -165,7 +169,7 @@ export default function PrepEdit({
                 <textarea
                   className="flex-1 border rounded p-2 resize-none overflow-hidden bg-gray-50 focus:ring-2 focus:ring-gray-300"
                   rows={1}
-                  value={(data.seqSteps || [""])[i] || ""}
+                  value={seqSteps[i] || ""}
                   onChange={e => onEditSeqStep(id, i, e.target.value)}
                   onInput={e => {
                     e.target.style.height = "auto";
