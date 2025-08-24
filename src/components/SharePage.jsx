@@ -13,11 +13,11 @@ import {
 import PrepView from "../components/DailyPlan/PrepView";
 import ela8 from "../data/standards/ela8.json";
 
-// simple fallback pastels
+// fallback pastels if a prep has none
 const PASTELS = [
   { bg: "hsl(200, 60%, 90%)", text: "hsl(200, 50%, 40%)" },
   { bg: "hsl(160, 60%, 90%)", text: "hsl(160, 50%, 32%)" },
-  { bg: "hsl(40, 80%, 92%)", text: "hsl(40, 50%, 38%)" },
+  { bg: "hsl(40, 80%, 92%)",  text: "hsl(40, 50%, 38%)" },
   { bg: "hsl(280, 60%, 92%)", text: "hsl(280, 45%, 40%)" },
 ];
 
@@ -26,8 +26,9 @@ export default function SharePage() {
   const [status, setStatus] = useState("loading"); // loading | ready | notfound | error
   const [plans, setPlans] = useState([]);
   const [teacherName, setTeacherName] = useState("");
+  const [prepNameMap, setPrepNameMap] = useState({}); // { prep1: "ELA", prep2: "Enrichment" }
 
-  // build a quick code -> text index for standards
+  // build standards code -> text index
   const standardsIndex = useMemo(() => {
     const idx = {};
     (ela8 || []).forEach(s => { idx[s.code] = { text: s.text }; });
@@ -35,7 +36,7 @@ export default function SharePage() {
   }, []);
 
   useEffect(() => {
-    async function fetchPlans() {
+    async function fetchAll() {
       try {
         // 1) find teacher by token
         const teachersSnap = await getDocs(
@@ -52,7 +53,15 @@ export default function SharePage() {
         }
         const teacherDoc = teachersSnap.docs[0];
         const teacherData = teacherDoc.data();
+
         setTeacherName(teacherData.displayName || "Shared Plans");
+
+        // build { prep1: "ELA", prep2: "Enrichment" } from teacher doc
+        const names = {};
+        (teacherData.prepNames || []).forEach(p => {
+          if (p?.id && p?.name) names[p.id] = p.name;
+        });
+        setPrepNameMap(names);
 
         // 2) load plans (newest first)
         const plansSnap = await getDocs(
@@ -68,14 +77,13 @@ export default function SharePage() {
         setStatus("error");
       }
     }
-    fetchPlans();
+    fetchAll();
   }, [token]);
 
   if (status === "loading") return <p className="p-6">Loading…</p>;
   if (status === "notfound") return <p className="p-6">This share link is invalid or disabled.</p>;
   if (status === "error") return <p className="p-6 text-red-600">Error loading plans.</p>;
 
-  // no-op handlers so PrepView stays read-only here
   const noop = () => {};
 
   return (
@@ -84,11 +92,21 @@ export default function SharePage() {
       <p className="text-sm text-gray-500">Read-only daily plans</p>
 
       <ul className="space-y-3">
-        {plans.map((plan, planIdx) => {
-          // support both [{...}] and { prep1: {...}, prep2: {...} }
+        {plans.map((plan) => {
+          // Support array or object storage for preps
           const prepList = Array.isArray(plan.preps)
-            ? plan.preps.map((p, i) => ({ id: p.id || `prep${i + 1}`, name: p.name || `Prep ${i + 1}`, pastel: p.pastel, prep: p }))
-            : Object.entries(plan.preps || {}).map(([id, p], i) => ({ id, name: p?.name || id, pastel: p?.pastel, prep: p }));
+            ? plan.preps.map((p, i) => ({
+                id: p.id || `prep${i + 1}`,
+                name: prepNameMap[p.id] || p.name || `Prep ${i + 1}`,
+                pastel: p.pastel,
+                prep: p,
+              }))
+            : Object.entries(plan.preps || {}).map(([id, p], i) => ({
+                id,
+                name: prepNameMap[id] || p?.name || `Prep ${i + 1}`,
+                pastel: p?.pastel,
+                prep: p,
+              }));
 
           return (
             <li key={plan.id} className="rounded-xl border p-4 bg-white shadow space-y-3">
@@ -99,23 +117,20 @@ export default function SharePage() {
                 <div className="text-sm text-gray-500">No sections found for this day.</div>
               ) : (
                 <div className="space-y-4">
-                  {prepList.map((item, i) => {
-                    const pastel = item.pastel || PASTELS[i % PASTELS.length];
-                    return (
-                      <PrepView
-                        key={item.id}
-                        id={item.id}
-                        name={item.name}
-                        pastel={pastel}
-                        prep={item.prep || {}}
-                        standardsIndex={standardsIndex}
-                        collapsed={false}
-                        onToggleCollapse={noop}
-                        onTogglePrep={noop}
-                        onToggleSeq={noop}
-                      />
-                    );
-                  })}
+                  {prepList.map((item, i) => (
+                    <PrepView
+                      key={item.id}
+                      id={item.id}
+                      name={item.name}
+                      pastel={item.pastel || PASTELS[i % PASTELS.length]}
+                      prep={item.prep || {}}
+                      standardsIndex={standardsIndex}
+                      collapsed={false}
+                      onToggleCollapse={noop}
+                      onTogglePrep={noop}
+                      onToggleSeq={noop}
+                    />
+                  ))}
                 </div>
               )}
             </li>
