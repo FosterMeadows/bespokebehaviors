@@ -10,6 +10,7 @@ import TeacherNotes from "./pages/TeacherNotes.jsx";
 import MegaChecklist from "./pages/MegaChecklist.jsx";
 import WeekAtAGlance from "./pages/WeekAtAGlance";
 import SharePage from "./components/SharePage.jsx";
+import Dashboard from "./pages/MainDashboard.jsx";
 
 export default function App() {
   const { user, login, logout } = useContext(AuthContext);
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <Layout displayName={user.displayName} logout={logout}>
       <Routes>
+         <Route path="/" element={<Dashboard />} />
         <Route path="/log" element={<BehaviorLog />} />
         <Route path="/standards" element={<StandardsTracker />} />
         <Route path="/dailyplan" element={<DailyPlan />} />
@@ -55,7 +57,7 @@ export default function App() {
         {/* You can keep this here for completeness, but it won't be hit because of the isPublic branch */}
         <Route path="/share/:token" element={<SharePage />} />
 
-        <Route path="*" element={<Navigate to="/log" replace />} />
+        <Route path="*" element={<Navigate to="/dailyplan" replace />} />
       </Routes>
     </Layout>
   );
