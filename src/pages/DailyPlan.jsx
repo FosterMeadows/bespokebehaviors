@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from "react";
+import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { useLocation, useNavigate, Link } from "react-router-dom";
@@ -54,12 +54,26 @@ export default function DailyPlan() {
     return new Date();
   });
 
+  // If there’s no ?date= and we land on a weekend, jump to next Monday.
+  useEffect(() => {
+    if (paramDate) return;
+    const day = currentDate.getDay(); // 0 Sun, 6 Sat
+    if (day === 0 || day === 6) {
+      const n = new Date(currentDate);
+      if (day === 6) n.setDate(n.getDate() + 2);
+      if (day === 0) n.setDate(n.getDate() + 1);
+      setCurrentDate(n);
+    }
+    // paramDate is intentionally excluded; we only snap once on mount for no-param loads
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Derived date fields
   const dateKey = useMemo(() => makeDateKey(currentDate), [currentDate]);
   const [today, setToday] = useState(formatPrettyDate(currentDate));
   const [weekday, setWeekday] = useState(formatWeekday(currentDate));
 
-  // --- NEW: week link param for router ---
+  // Week link param for router
   const dateParam = useMemo(() => {
     const m = String(currentDate.getMonth() + 1).padStart(2, "0");
     const d = String(currentDate.getDate()).padStart(2, "0");
@@ -123,22 +137,28 @@ export default function DailyPlan() {
     }
   }, [paramDate]);
 
+  // Prevent stale fetches from overwriting newer results
+  const fetchSeq = useRef(0);
+
   // Load plan for dateKey (deterministic doc id)
   useEffect(() => {
     if (!uid || !dateKey) return;
+    const seq = ++fetchSeq.current;
     setLoading(true);
+    setError("");
     (async () => {
       try {
         const planData = await plansSvc.getDailyPlan(uid, dateKey);
+        if (fetchSeq.current !== seq) return; // ignore stale response
         setPlan(planData);
         setIsEditing(planData == null); // new = editing by default
       } finally {
-        setLoading(false);
+        if (fetchSeq.current === seq) setLoading(false);
       }
     })();
   }, [uid, dateKey]);
 
-  // Reset per-prep state whenever plan, preps, or dateKey changes
+  // Reset per-prep state WHEN THE PLAN CHANGES (not just dateKey)
   useEffect(() => {
     setPrepData(() => {
       const base = {};
@@ -157,7 +177,7 @@ export default function DailyPlan() {
       });
       return base;
     });
-  }, [plan, preps, dateKey]);
+  }, [plan, preps]); // removed dateKey to avoid flashing blanks during fetch
 
   const changeDate = (offset) => {
     let d = new Date(currentDate);
@@ -346,10 +366,9 @@ export default function DailyPlan() {
       </div>
 
       <div className="flex justify-end space-x-3">
-        {/* NEW: Week link */}
         <Link
           to={`/week?date=${dateParam}`}
-          className="px-3 py-1 bg-gray-2 00 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
+          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
         >
           Week
         </Link>
@@ -384,21 +403,15 @@ export default function DailyPlan() {
             const d = (plan.preps || {})[pid] || {};
             const updated = [...(d.prepDone || [])];
             updated[i] = !updated[i];
-            await plansSvc.updatePrepDone(uid, dateKey, pid, updated);
-            setPlan(p => ({
-              ...p,
-              preps: { ...p.preps, [pid]: { ...d, prepDone: updated } }
-            }));
+            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, prepDone: updated } }})); // optimistic
+            try { await plansSvc.updatePrepDone(uid, dateKey, pid, updated); } catch {}
           }}
           onToggleSeq={async (pid, i) => {
             const d = (plan.preps || {})[pid] || {};
             const updated = [...(d.seqDone || [])];
             updated[i] = !updated[i];
-            await plansSvc.updateSeqDone(uid, dateKey, pid, updated);
-            setPlan(p => ({
-              ...p,
-              preps: { ...p.preps, [pid]: { ...d, seqDone: updated } }
-            }));
+            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, seqDone: updated } }})); // optimistic
+            try { await plansSvc.updateSeqDone(uid, dateKey, pid, updated); } catch {}
           }}
         />
       ))}
@@ -426,7 +439,6 @@ export default function DailyPlan() {
       </div>
 
       <div className="flex justify-end mb-2 space-x-2">
-        {/* NEW: Week link */}
         <Link
           to={`/week?date=${dateParam}`}
           className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
@@ -538,7 +550,6 @@ export default function DailyPlan() {
                 }
               }))
             }
-            /* Reorder handlers (for drag-and-drop later) */
             onReorderPrepStep={(pid, from, to) =>
               setPrepData(pd => {
                 const steps = [...(pd[pid]?.prepSteps || [])];
