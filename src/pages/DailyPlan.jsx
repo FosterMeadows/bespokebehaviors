@@ -16,9 +16,24 @@ const PREP_DEFAULTS = [
   { id: "prep2", name: "Honors ELA" }
 ];
 
-// Static standards helpers (no need for hooks)
 const STANDARD_OPTIONS = ela8.map(s => ({ value: s.code, label: `${s.code}: ${s.text}` }));
 const STANDARDS_INDEX = Object.fromEntries(ela8.map(s => [s.code, s]));
+
+// Helpers for URL<->Date
+function parseParamDate(search) {
+  const params = new URLSearchParams(search);
+  const raw = params.get("date");
+  if (!raw || !/^\d{2}\.\d{2}\.\d{4}$/.test(raw)) return null;
+  const [m, d, y] = raw.split(".").map(Number);
+  const next = new Date(y, m - 1, d);
+  return Number.isNaN(next.valueOf()) ? null : next;
+}
+function buildDateParam(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const y = d.getFullYear();
+  return `${m}.${day}.${y}`;
+}
 
 export default function DailyPlan() {
   const { user } = useContext(AuthContext);
@@ -33,55 +48,61 @@ export default function DailyPlan() {
   const [editPreps, setEditPreps] = useState([]);
   const [showCalendar, setShowCalendar] = useState(false);
 
-  // Collapsed state per prep
   const [collapsedPreps, setCollapsedPreps] = useState({});
-  // Clipboard for copy/paste
   const [prepClipboard, setPrepClipboard] = useState(null);
 
-  // URL param parsing (MM.DD.YYYY)
-  const paramDate = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    const raw = params.get("date");
-    return raw && /^\d{2}\.\d{2}\.\d{4}$/.test(raw) ? raw : null;
-  }, [location.search]);
+  // URL is source of truth
+  const [currentDate, setCurrentDate] = useState(() => parseParamDate(location.search) || new Date());
 
-  // Current date state
-  const [currentDate, setCurrentDate] = useState(() => {
-    if (paramDate) {
-      const [m, d, y] = paramDate.split(".").map(Number);
-      return new Date(y, m - 1, d);
-    }
-    return new Date();
-  });
-
-  // If there’s no ?date= and we land on a weekend, jump to next Monday.
+  // One-time init: if no ?date=, snap weekends and write param
+  const didInitRef = useRef(false);
   useEffect(() => {
-    if (paramDate) return;
-    const day = currentDate.getDay(); // 0 Sun, 6 Sat
-    if (day === 0 || day === 6) {
-      const n = new Date(currentDate);
-      if (day === 6) n.setDate(n.getDate() + 2);
-      if (day === 0) n.setDate(n.getDate() + 1);
-      setCurrentDate(n);
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
+    const fromUrl = parseParamDate(location.search);
+    if (fromUrl) {
+      setCurrentDate(fromUrl);
+      return;
     }
-    // paramDate is intentionally excluded; we only snap once on mount for no-param loads
+    let d = new Date();
+    const day = d.getDay();
+    if (day === 6) d.setDate(d.getDate() + 2);
+    if (day === 0) d.setDate(d.getDate() + 1);
+    setCurrentDate(d);
+    navigate(`?date=${buildDateParam(d)}`, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Derived date fields
+  // Browser back/forward updates currentDate
+  useEffect(() => {
+    const fromUrl = parseParamDate(location.search);
+    if (!fromUrl) return;
+    if (fromUrl.toDateString() !== currentDate.toDateString()) {
+      setCurrentDate(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  // Explicit navigation helper
+  const pushDate = (d, { replace = true } = {}) => {
+    setCurrentDate(d);
+    navigate(`?date=${buildDateParam(d)}`, { replace });
+  };
+
+  const changeDate = (offset) => {
+    const d = new Date(currentDate);
+    do { d.setDate(d.getDate() + offset); } while ([0, 6].includes(d.getDay()));
+    pushDate(d, { replace: true });
+  };
+
+  // Derived keys/labels: derive from currentDate, NOT state updated in an effect
   const dateKey = useMemo(() => makeDateKey(currentDate), [currentDate]);
-  const [today, setToday] = useState(formatPrettyDate(currentDate));
-  const [weekday, setWeekday] = useState(formatWeekday(currentDate));
+  const today = useMemo(() => formatPrettyDate(currentDate), [currentDate]);
+  const weekday = useMemo(() => formatWeekday(currentDate), [currentDate]);
+  const dateParam = useMemo(() => buildDateParam(currentDate), [currentDate]);
 
-  // Week link param for router
-  const dateParam = useMemo(() => {
-    const m = String(currentDate.getMonth() + 1).padStart(2, "0");
-    const d = String(currentDate.getDate()).padStart(2, "0");
-    const y = currentDate.getFullYear();
-    return `${m}.${d}.${y}`;
-  }, [currentDate]);
-
-  // Data & UI state
+  // Data & UI
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState(null);
   const [prepData, setPrepData] = useState({});
@@ -90,7 +111,14 @@ export default function DailyPlan() {
   const [success, setSuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  // success banner auto-clear, with cleanup
+  // Reset banners on date change
+  useEffect(() => {
+    setIsEditing(false);
+    setSuccess(false);
+    setError("");
+  }, [dateKey]);
+
+  // Auto-clear success
   useEffect(() => {
     if (!success) return;
     const t = setTimeout(() => setSuccess(false), 2000);
@@ -104,43 +132,15 @@ export default function DailyPlan() {
       try {
         const tRef = doc(db, "teachers", uid);
         const snap = await getDoc(tRef);
-        if (snap.exists() && snap.data().prepNames) {
-          setPreps(snap.data().prepNames);
-        }
+        if (snap.exists() && snap.data().prepNames) setPreps(snap.data().prepNames);
       } catch {
         setPreps(PREP_DEFAULTS);
       }
     })();
   }, [uid]);
 
-  // Update pretty date and weekday when currentDate changes
-  useEffect(() => {
-    setToday(formatPrettyDate(currentDate));
-    setWeekday(formatWeekday(currentDate));
-  }, [currentDate]);
-
-  // Keep URL param in sync as MM.DD.YYYY
-  useEffect(() => {
-    const month = String(currentDate.getMonth() + 1).padStart(2, "0");
-    const day = String(currentDate.getDate()).padStart(2, "0");
-    const year = currentDate.getFullYear();
-    const param = `${month}.${day}.${year}`;
-    navigate(`?date=${param}`, { replace: true });
-  }, [currentDate, navigate]);
-
-  // If the URL param changes externally, update the date
-  useEffect(() => {
-    if (paramDate) {
-      const [m, d, y] = paramDate.split(".").map(Number);
-      const next = new Date(y, m - 1, d);
-      if (!isNaN(next.valueOf())) setCurrentDate(next);
-    }
-  }, [paramDate]);
-
-  // Prevent stale fetches from overwriting newer results
+  // Fetch plan for dateKey
   const fetchSeq = useRef(0);
-
-  // Load plan for dateKey (deterministic doc id)
   useEffect(() => {
     if (!uid || !dateKey) return;
     const seq = ++fetchSeq.current;
@@ -149,16 +149,16 @@ export default function DailyPlan() {
     (async () => {
       try {
         const planData = await plansSvc.getDailyPlan(uid, dateKey);
-        if (fetchSeq.current !== seq) return; // ignore stale response
+        if (fetchSeq.current !== seq) return;
         setPlan(planData);
-        setIsEditing(planData == null); // new = editing by default
+        setIsEditing(planData == null);
       } finally {
         if (fetchSeq.current === seq) setLoading(false);
       }
     })();
   }, [uid, dateKey]);
 
-  // Reset per-prep state WHEN THE PLAN CHANGES (not just dateKey)
+  // Hydrate edit state when plan/preps change
   useEffect(() => {
     setPrepData(() => {
       const base = {};
@@ -177,22 +177,16 @@ export default function DailyPlan() {
       });
       return base;
     });
-  }, [plan, preps]); // removed dateKey to avoid flashing blanks during fetch
+  }, [plan, preps]);
 
-  const changeDate = (offset) => {
-    let d = new Date(currentDate);
-    do { d.setDate(d.getDate() + offset); } while ([0, 6].includes(d.getDay()));
-    setCurrentDate(d);
-  };
-
-  // Build editable fields payload (does not touch prepDone/seqDone)
+  // Build partial updates FROM THE CURRENT RENDER
   const buildEditableFieldUpdates = () => {
-    const updates = {};
-    updates["dateKey"] = dateKey;
-    updates["date"] = today;
-    updates["weekday"] = weekday;
-    updates["isPublic"] = true;
-
+    const updates = {
+      dateKey,
+      date: today,
+      weekday,
+      isPublic: true,
+    };
     preps.forEach(({ id }) => {
       updates[`preps.${id}.title`] = prepData[id]?.title || "";
       updates[`preps.${id}.standards`] = prepData[id]?.standards || [];
@@ -204,7 +198,6 @@ export default function DailyPlan() {
     return updates;
   };
 
-  // Save using service helpers: init or update (no manual transactions)
   const savePlan = async (e) => {
     e?.preventDefault();
     setError("");
@@ -213,7 +206,6 @@ export default function DailyPlan() {
     setSaving(true);
     try {
       if (!plan) {
-        // Create brand-new document
         const base = {
           dateKey,
           date: today,
@@ -233,35 +225,17 @@ export default function DailyPlan() {
         });
         await plansSvc.initDailyPlan(uid, dateKey, base);
       } else {
-        // Update only intended fields
         const updates = buildEditableFieldUpdates();
         await plansSvc.updateDailyPlan(uid, dateKey, updates);
       }
-
-      // reflect local plan with patched fields, but keep any done arrays from current plan
-      setPlan((prev) => {
-        const next = { ...(prev || {}), dateKey, date: today, weekday, isPublic: true };
-        next.preps = next.preps || {};
-        preps.forEach(({ id }) => {
-          const prevPrep = prev?.preps?.[id] || {};
-          next.preps[id] = {
-            ...prevPrep,
-            title: prepData[id]?.title || "",
-            standards: prepData[id]?.standards || [],
-            performanceGoal: prepData[id]?.performanceGoal || "",
-            objective: prepData[id]?.objective || "",
-            prepSteps: (prepData[id]?.prepSteps || []).filter(Boolean),
-            seqSteps: (prepData[id]?.seqSteps || []).filter(Boolean),
-          };
-        });
-        return next;
-      });
-
+      // Hard sync
+      const fresh = await plansSvc.getDailyPlan(uid, dateKey);
+      setPlan(fresh || null);
       setSuccess(true);
       setIsEditing(false);
     } catch (err) {
       console.error("savePlan failed", err);
-      setError("Save failed, possibly due to a concurrent change. Reload and try again.");
+      setError("Save failed. Reload and try again.");
     } finally {
       setSaving(false);
     }
@@ -275,9 +249,7 @@ export default function DailyPlan() {
   const handlePrepNamesSave = async () => {
     setPreps(editPreps);
     setShowPrepEdit(false);
-    if (uid) {
-      await plansSvc.savePrepNames(uid, editPreps);
-    }
+    if (uid) await plansSvc.savePrepNames(uid, editPreps);
   };
 
   const gradientStyle = {
@@ -315,24 +287,14 @@ export default function DailyPlan() {
 
   if (loading) return <div className="p-6 text-center">Loading…</div>;
 
-  // Build branch content (view vs edit)
+  // Key the edit form by dateKey so inputs never leak across days
   const content = !isEditing && plan ? (
-    <div className="space-y-6">
+    <div className="space-y-6" key={`view-${dateKey}`}>
       <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-        <button
-          onClick={() => changeDate(-1)}
-          className="text-xl text-gray-400 hover:text-gray-700 transition"
-          aria-label="Previous day"
-        >
-          ←
-        </button>
+        <button onClick={() => changeDate(-1)} className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
 
         <div className="relative">
-          <h1
-            onClick={() => setShowCalendar(true)}
-            className="cursor-pointer text-2xl font-bold"
-            style={{ color: pastel.text }}
-          >
+          <h1 onClick={() => setShowCalendar(true)} className="cursor-pointer text-2xl font-bold" style={{ color: pastel.text }}>
             {weekday}, {today}
           </h1>
 
@@ -345,7 +307,15 @@ export default function DailyPlan() {
                 if (!v) return;
                 const [y, m, d] = v.split("-").map(Number);
                 if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) {
-                  setCurrentDate(new Date(y, m - 1, d));
+                  const next = new Date(y, m - 1, d);
+                  if ([0, 6].includes(next.getDay())) {
+                    const n = new Date(next);
+                    if (n.getDay() === 6) n.setDate(n.getDate() + 2);
+                    if (n.getDay() === 0) n.setDate(n.getDate() + 1);
+                    pushDate(n);
+                  } else {
+                    pushDate(next);
+                  }
                   setShowCalendar(false);
                 }
               }}
@@ -356,35 +326,14 @@ export default function DailyPlan() {
           )}
         </div>
 
-        <button
-          onClick={() => changeDate(1)}
-          className="text-xl text-gray-400 hover:text-gray-700 transition"
-          aria-label="Next day"
-        >
-          →
-        </button>
+        <button onClick={() => changeDate(1)} className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
       </div>
 
       <div className="flex justify-end space-x-3">
-        <Link
-          to={`/week?date=${dateParam}`}
-          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
-        >
-          Week
-        </Link>
+        <Link to={`/week?date=${dateParam}`} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition">Week</Link>
 
-        <button
-          onClick={() => setShowPrepEdit(true)}
-          className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
-        >
-          Edit Preps
-        </button>
-        <button
-          onClick={() => setIsEditing(true)}
-          className="px-4 py-1 bg-yellow-400 hover:bg-yellow-500 text-white rounded shadow transition font-semibold"
-        >
-          Edit
-        </button>
+        <button onClick={() => setShowPrepEdit(true)} className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition">Edit Preps</button>
+        <button onClick={() => setIsEditing(true)} className="px-4 py-1 bg-yellow-400 hover:bg-yellow-500 text-white rounded shadow transition font-semibold">Edit</button>
       </div>
 
       {preps.map(({ id, name }) => (
@@ -396,63 +345,35 @@ export default function DailyPlan() {
           prep={(plan.preps || {})[id] || {}}
           standardsIndex={STANDARDS_INDEX}
           collapsed={!!collapsedPreps[id]}
-          onToggleCollapse={(pid) =>
-            setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))
-          }
+          onToggleCollapse={(pid) => setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))}
           onTogglePrep={async (pid, i) => {
             const d = (plan.preps || {})[pid] || {};
             const updated = [...(d.prepDone || [])];
             updated[i] = !updated[i];
-            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, prepDone: updated } }})); // optimistic
+            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, prepDone: updated } }}));
             try { await plansSvc.updatePrepDone(uid, dateKey, pid, updated); } catch {}
           }}
           onToggleSeq={async (pid, i) => {
             const d = (plan.preps || {})[pid] || {};
             const updated = [...(d.seqDone || [])];
             updated[i] = !updated[i];
-            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, seqDone: updated } }})); // optimistic
+            setPlan(p => ({ ...p, preps: { ...p.preps, [pid]: { ...d, seqDone: updated } }}));
             try { await plansSvc.updateSeqDone(uid, dateKey, pid, updated); } catch {}
           }}
         />
       ))}
     </div>
   ) : (
-    <form onSubmit={savePlan} className="space-y-8">
+    <form onSubmit={savePlan} className="space-y-8" key={`edit-${dateKey}`}>
       <div className="flex justify-between items-center pb-2 border-b border-gray-200">
-        <button
-          onClick={() => changeDate(-1)}
-          className="text-xl text-gray-400 hover:text-gray-700 transition"
-          aria-label="Previous day"
-        >
-          ←
-        </button>
-        <h1 className="text-2xl font-bold" style={{ color: pastel.text }}>
-          Daily Plan - {weekday}, {today}
-        </h1>
-        <button
-          onClick={() => changeDate(1)}
-          className="text-xl text-gray-400 hover:text-gray-700 transition"
-          aria-label="Next day"
-        >
-          →
-        </button>
+        <button onClick={() => changeDate(-1)} className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Previous day">←</button>
+        <h1 className="text-2xl font-bold" style={{ color: pastel.text }}>Daily Plan - {weekday}, {today}</h1>
+        <button onClick={() => changeDate(1)} className="text-xl text-gray-400 hover:text-gray-700 transition" aria-label="Next day">→</button>
       </div>
 
       <div className="flex justify-end mb-2 space-x-2">
-        <Link
-          to={`/week?date=${dateParam}`}
-          className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition"
-        >
-          Week
-        </Link>
-
-        <button
-          type="button"
-          onClick={() => setShowPrepEdit(true)}
-          className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition"
-        >
-          Edit Preps
-        </button>
+        <Link to={`/week?date=${dateParam}`} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 text-sm shadow transition">Week</Link>
+        <button type="button" onClick={() => setShowPrepEdit(true)} className="px-3 py-1 bg-gray-300 hover:bg-gray-400 rounded text-gray-800 text-sm shadow transition">Edit Preps</button>
       </div>
 
       {preps.map(({ id, name }) => {
@@ -479,127 +400,82 @@ export default function DailyPlan() {
             standardOptions={STANDARD_OPTIONS}
             collapsed={collapsed}
             canPaste={canPaste}
-            onToggleCollapse={(pid) =>
-              setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))
-            }
+            onToggleCollapse={(pid) => setCollapsedPreps(cp => ({ ...cp, [pid]: !cp[pid] }))}
             onCopy={handleCopy}
             onPaste={handlePaste}
-            onChangeTitle={(pid, value) =>
-              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], title: value } }))
-            }
-            onChangePerformanceGoal={(pid, value) =>
-              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], performanceGoal: value } }))
-            }
-            onChangeObjective={(pid, value) =>
-              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], objective: value } }))
-            }
-            onChangeStandards={(pid, values) =>
-              setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], standards: values } }))
-            }
-            onEditPrepStep={(pid, i, value) =>
-              setPrepData(pd => {
-                const arr = [...(pd[pid]?.prepSteps || [])];
-                arr[i] = value;
-                return { ...pd, [pid]: { ...pd[pid], prepSteps: arr } };
-              })
-            }
-            onRemovePrepStep={(pid, i) =>
-              setPrepData(pd => {
-                const arr = (pd[pid]?.prepSteps || []).filter((_, j) => j !== i);
-                const chk = (pd[pid]?.prepDone || []).filter((_, j) => j !== i);
-                return {
-                  ...pd,
-                  [pid]: { ...pd[pid], prepSteps: arr.length ? arr : [""], prepDone: chk.length ? chk : [] }
-                };
-              })
-            }
-            onAddPrepStep={(pid) =>
-              setPrepData(pd => ({
-                ...pd,
-                [pid]: {
-                  ...pd[pid],
-                  prepSteps: [...(pd[pid]?.prepSteps || []), ""],
-                  prepDone: [...(pd[pid]?.prepDone || []), false]
-                }
-              }))
-            }
-            onEditSeqStep={(pid, i, value) =>
-              setPrepData(pd => {
-                const arr = [...(pd[pid]?.seqSteps || [])];
-                arr[i] = value;
-                return { ...pd, [pid]: { ...pd[pid], seqSteps: arr } };
-              })
-            }
-            onRemoveSeqStep={(pid, i) =>
-              setPrepData(pd => {
-                const arr = (pd[pid]?.seqSteps || []).filter((_, j) => j !== i);
-                const chk = (pd[pid]?.seqDone || []).filter((_, j) => j !== i);
-                return {
-                  ...pd,
-                  [pid]: { ...pd[pid], seqSteps: arr.length ? arr : [""], seqDone: chk.length ? chk : [] }
-                };
-              })
-            }
-            onAddSeqStep={(pid) =>
-              setPrepData(pd => ({
-                ...pd,
-                [pid]: {
-                  ...pd[pid],
-                  seqSteps: [...(pd[pid]?.seqSteps || []), ""],
-                  seqDone:  [...(pd[pid]?.seqDone  || []), false],
-                }
-              }))
-            }
-            onReorderPrepStep={(pid, from, to) =>
-              setPrepData(pd => {
-                const steps = [...(pd[pid]?.prepSteps || [])];
-                const done = [...(pd[pid]?.prepDone || [])];
-                if (from < 0 || to < 0 || from >= steps.length || to >= steps.length) return pd;
-                const [s] = steps.splice(from, 1);
-                steps.splice(to, 0, s);
-                const [d] = done.splice(from, 1);
-                done.splice(to, 0, d);
-                return { ...pd, [pid]: { ...pd[pid], prepSteps: steps, prepDone: done } };
-              })
-            }
-            onReorderSeqStep={(pid, from, to) =>
-              setPrepData(pd => {
-                const steps = [...(pd[pid]?.seqSteps || [])];
-                const done = [...(pd[pid]?.seqDone || [])];
-                if (from < 0 || to < 0 || from >= steps.length || to >= steps.length) return pd;
-                const [s] = steps.splice(from, 1);
-                steps.splice(to, 0, s);
-                const [d] = done.splice(from, 1);
-                done.splice(to, 0, d);
-                return { ...pd, [pid]: { ...pd[pid], seqSteps: steps, seqDone: done } };
-              })
-            }
+            onChangeTitle={(pid, value) => setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], title: value } }))}
+            onChangePerformanceGoal={(pid, value) => setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], performanceGoal: value } }))}
+            onChangeObjective={(pid, value) => setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], objective: value } }))}
+            onChangeStandards={(pid, values) => setPrepData(pd => ({ ...pd, [pid]: { ...pd[pid], standards: values } }))}
+            onEditPrepStep={(pid, i, value) => setPrepData(pd => {
+              const arr = [...(pd[pid]?.prepSteps || [])];
+              arr[i] = value;
+              return { ...pd, [pid]: { ...pd[pid], prepSteps: arr } };
+            })}
+            onRemovePrepStep={(pid, i) => setPrepData(pd => {
+              const arr = (pd[pid]?.prepSteps || []).filter((_, j) => j !== i);
+              const chk = (pd[pid]?.prepDone || []).filter((_, j) => j !== i);
+              return { ...pd, [pid]: { ...pd[pid], prepSteps: arr.length ? arr : [""], prepDone: chk.length ? chk : [] } };
+            })}
+            onAddPrepStep={(pid) => setPrepData(pd => ({
+              ...pd,
+              [pid]: {
+                ...pd[pid],
+                prepSteps: [...(pd[pid]?.prepSteps || []), ""],
+                prepDone: [...(pd[pid]?.prepDone || []), false]
+              }
+            }))}
+            onEditSeqStep={(pid, i, value) => setPrepData(pd => {
+              const arr = [...(pd[pid]?.seqSteps || [])];
+              arr[i] = value;
+              return { ...pd, [pid]: { ...pd[pid], seqSteps: arr } };
+            })}
+            onRemoveSeqStep={(pid, i) => setPrepData(pd => {
+              const arr = (pd[pid]?.seqSteps || []).filter((_, j) => j !== i);
+              const chk = (pd[pid]?.seqDone || []).filter((_, j) => j !== i);
+              return { ...pd, [pid]: { ...pd[pid], seqSteps: arr.length ? arr : [""], seqDone: chk.length ? chk : [] } };
+            })}
+            onAddSeqStep={(pid) => setPrepData(pd => ({
+              ...pd,
+              [pid]: {
+                ...pd[pid],
+                seqSteps: [...(pd[pid]?.seqSteps || []), ""],
+                seqDone:  [...(pd[pid]?.seqDone  || []), false],
+              }
+            }))}
+            onReorderPrepStep={(pid, from, to) => setPrepData(pd => {
+              const steps = [...(pd[pid]?.prepSteps || [])];
+              const done = [...(pd[pid]?.prepDone || [])];
+              if (from < 0 || to < 0 || from >= steps.length) return pd;
+              const [s] = steps.splice(from, 1);
+              steps.splice(to, 0, s);
+              const [d] = done.splice(from, 1);
+              done.splice(to, 0, d);
+              return { ...pd, [pid]: { ...pd[pid], prepSteps: steps, prepDone: done } };
+            })}
+            onReorderSeqStep={(pid, from, to) => setPrepData(pd => {
+              const steps = [...(pd[pid]?.seqSteps || [])];
+              const done = [...(pd[pid]?.seqDone || [])];
+              if (from < 0 || to < 0 || from >= steps.length) return pd;
+              const [s] = steps.splice(from, 1);
+              steps.splice(to, 0, s);
+              const [d] = done.splice(from, 1);
+              done.splice(to, 0, d);
+              return { ...pd, [pid]: { ...pd[pid], seqSteps: steps, seqDone: done } };
+            })}
           />
         );
       })}
 
-      {error && (
-        <p className="text-red-600 font-semibold" aria-live="polite">
-          {error}
-        </p>
-      )}
-      {success && (
-        <p className="text-green-600 font-semibold" aria-live="polite">
-          Saved!
-        </p>
-      )}
+      {error && <p className="text-red-600 font-semibold" aria-live="polite">{error}</p>}
+      {success && <p className="text-green-600 font-semibold" aria-live="polite">Saved!</p>}
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="px-8 py-2 bg-gray-700 hover:bg-gray-900 text-white rounded-lg font-bold shadow transition"
-      >
+      <button type="submit" disabled={saving} className="px-8 py-2 bg-gray-700 hover:bg-gray-900 text-white rounded-lg font-bold shadow transition">
         {saving ? "Saving..." : "Save"}
       </button>
     </form>
   );
 
-  // Single wrapper, single modal
   return (
     <div style={gradientStyle}>
       <div className="max-w-5xl mx-auto p-6 bg-gray-50 rounded-xl shadow-lg border border-gray-200">
