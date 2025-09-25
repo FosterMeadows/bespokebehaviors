@@ -67,6 +67,7 @@ export default function SharePage() {
         const plansSnap = await getDocs(
           query(
             collection(db, "teachers", teacherDoc.id, "dailyPlans"),
+            where("isPublic", "==", true),
             orderBy("dateKey", "desc")
           )
         );
