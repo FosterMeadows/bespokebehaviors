@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useMemo as useMemo2 } from "react";
+// Layout.jsx
+import React, { useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -11,7 +12,8 @@ import {
   LayoutDashboard,
   ChevronDown,
   ChevronRight,
-  LogOut
+  LogOut,
+  Timer
 } from "lucide-react";
 
 function classNames(...c) {
@@ -32,7 +34,6 @@ function InitialsAvatar({ name }) {
   );
 }
 
-// Feature flag so the gremlins don't find the behavior log yet
 const SHOW_BEHAVIOR = false;
 
 const CORE_ITEMS = [
@@ -45,8 +46,19 @@ const TOOL_ITEMS = [
   { to: "/teachernotes", label: "Notes", icon: NotebookPen },
   { to: "/megachecklist", label: "Checklist", icon: CheckSquare },
   { to: "/gradecalculator", label: "Grade Calculator", icon: Calculator },
+  { to: "/one-minute-human", label: "One-Minute Human", icon: Timer },
   ...(SHOW_BEHAVIOR ? [{ to: "/log", label: "Behavior Log", icon: ClipboardList, end: true }] : [])
 ];
+
+// Routes that should render full screen (no sidebar)
+const FULLBLEED_ROUTES = ["/reteach"];
+
+function isFullBleedPath(pathname) {
+  // match exact or subpaths like /reteach/live, /reteach/123, etc.
+  return FULLBLEED_ROUTES.some(base =>
+    pathname === base || pathname.startsWith(base + "/")
+  );
+}
 
 function NavItem({ to, label, icon: Icon, end = false }) {
   return (
@@ -88,12 +100,28 @@ function SectionLabel({ children }) {
 
 export default function Layout({ children, displayName, logout }) {
   const location = useLocation();
+
   const isToolRoute = useMemo(
     () => TOOL_ITEMS.some(i => location.pathname.startsWith(i.to)),
     [location.pathname]
   );
   const [toolsOpen, setToolsOpen] = useState(isToolRoute);
 
+  const fullBleed = isFullBleedPath(location.pathname);
+
+  // FULL-BLEED RENDER: keep layout wrapper, drop sidebar + padding
+  if (fullBleed) {
+    return (
+      <div className="min-h-svh bg-white">
+        <main className="min-h-svh overflow-auto">
+          {/* Let the /reteach page own its own padding/margins */}
+          {children}
+        </main>
+      </div>
+    );
+  }
+
+  // DEFAULT RENDER: sidebar + padded content
   return (
     <div className="flex h-svh bg-sky-50">
       <aside className="w-72 border-r border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-sm flex flex-col">
@@ -123,7 +151,6 @@ export default function Layout({ children, displayName, logout }) {
               aria-controls="tools-group"
             >
               <span className="flex items-center gap-2">
-                {/* little chevron lives on the left for better scan */}
                 {toolsOpen ? (
                   <ChevronDown className="h-4 w-4 text-sky-500" />
                 ) : (
