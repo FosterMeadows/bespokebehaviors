@@ -1,5 +1,7 @@
 # React + Vite
 
+Deployment test note: this repository is connected to the FosterMeadows/bespokebehaviors GitHub remote.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
