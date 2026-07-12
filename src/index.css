@@ -1,3 +1,28 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@keyframes behavior-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.behavior-step-in {
+  animation: behavior-step-in 180ms ease-out;
+}
+
+.academic-step-in {
+  animation: behavior-step-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .behavior-step-in,
+  .academic-step-in {
+    animation: none;
+  }
+}

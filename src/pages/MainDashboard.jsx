@@ -1,6 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
   CalendarDays,
   CheckSquare,
@@ -50,22 +49,6 @@ function Line({ label, children }) {
       </div>
     </div>
   );
-}
-
-/* ---- minimal date parser for plans ---- */
-function parseMaybeDate(raw, fallbackFromId) {
-  if (raw?.toDate) return raw.toDate();
-  if (typeof raw === "string" && /^\d{2}\.\d{2}\.\d{4}$/.test(raw)) {
-    const [m, d, y] = raw.split(".").map(Number);
-    return new Date(y, m - 1, d);
-  }
-  const d = new Date(raw);
-  if (!isNaN(d.getTime())) return d;
-  if (typeof fallbackFromId === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fallbackFromId)) {
-    const [Y, M, D] = fallbackFromId.split("-").map(Number);
-    return new Date(Y, M - 1, D);
-  }
-  return new Date();
 }
 
 export default function Dashboard() {

@@ -54,21 +54,21 @@ export default function ReportForm({ onSuccess }) {
   const { reports: studentReports, loading: countLoading } = useReports({ studentName: studentNameValue });
   const existingCount = countLoading ? 0 : studentReports.length;
 
-  // Determine if this submission is the third reteach
+  // Determine if this submission is the third Academic Intervention
   const isThird = existingCount === 2;
   const contactPrompt = isThird
-    ? "This is the third Reteach given for this student. You MUST make contact home. If you have already done so, check this box. If you will do it soon, you can add it into My Reports later."
-    : "Do you have parent contact relevant to this Reteach that you'd like to add into the system?";
+    ? "This is the third Academic Intervention given for this student. You MUST make contact home. If you have already done so, check this box. If you will do it soon, you can add it into My Reports later."
+    : "Do you have parent contact relevant to this Academic Intervention that you'd like to add into the system?";
 
   async function onSubmit(data) {
     if (!user) return;
     setToast({ visible: false, message: "", student: "" });
 
-    // Enforce max 6 reteaches
+    // Enforce max 6 Academic Interventions
     if (existingCount >= 6) {
       setToast({
         visible: true,
-        message: `This student already has ${existingCount} reteaches.`,
+        message: `This student already has ${existingCount} Academic Interventions.`,
         student: data.studentName,
       });
       return;

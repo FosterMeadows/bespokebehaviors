@@ -3,7 +3,7 @@ import ela8 from "../data/standards/ela8.json";
 
 export default function StandardsKanban() {
   // Initial state: all standards in "upcoming"
-  const [columns, setColumns] = useState({
+  const [columns] = useState({
     upcoming: ela8,
     q1: [],
     q2: [],

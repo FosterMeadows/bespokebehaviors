@@ -239,7 +239,7 @@ export default function Dashboard() {
 
         {pending.length === 0 ? (
           <p className="text-gray-600">
-            All caught up! No pending reteaches.
+            All caught up! No pending Academic Interventions.
           </p>
         ) : (
           <div className="space-y-4">

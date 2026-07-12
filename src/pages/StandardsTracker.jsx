@@ -47,7 +47,7 @@ function fmtDisplay(d) {
 }
 
 export default function StandardsTracker() {
-  const { user, profile, setProfile } = useContext(AuthContext);
+  const { user, setProfile } = useContext(AuthContext);
 
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(true);
@@ -174,7 +174,7 @@ export default function StandardsTracker() {
     () => STANDARDS_PACKAGES.find((p) => p.id === selected) || null,
     [selected]
   );
-  const standardsList = pkg?.data || [];
+  const standardsList = useMemo(() => pkg?.data || [], [pkg]);
 
   const filteredStandards = useMemo(() => {
     const q = query.trim().toLowerCase();

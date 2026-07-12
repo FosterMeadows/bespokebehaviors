@@ -107,7 +107,7 @@ export default function WeekAtAGlance() {
         setLoading(false);
       }
     })();
-  }, [uid, /* stable dep */ JSON.stringify(dateKeys)]);
+  }, [uid, dateKeys]);
 
   const changeWeek = (deltaWeeks) => {
     const next = addDays(monday, deltaWeeks * 7);

@@ -1,0 +1,181 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function teacherPath(uid) {
+      return /databases/$(database)/documents/teachers/$(uid);
+    }
+
+    function hasTeacherProfile() {
+      return signedIn() && exists(teacherPath(request.auth.uid));
+    }
+
+    function profile() {
+      return get(teacherPath(request.auth.uid)).data;
+    }
+
+    function hasRole(role) {
+      return hasTeacherProfile()
+        && (!profile().keys().hasAny(["disabled"]) || profile().disabled != true)
+        && profile().keys().hasAny(["roles"])
+        && profile().roles.hasAny([role]);
+    }
+
+    function hasAnyRole(roles) {
+      return hasTeacherProfile()
+        && (!profile().keys().hasAny(["disabled"]) || profile().disabled != true)
+        && profile().keys().hasAny(["roles"])
+        && profile().roles.hasAny(roles);
+    }
+
+    function hasFeature(feature) {
+      return hasTeacherProfile()
+        && (!profile().keys().hasAny(["disabled"]) || profile().disabled != true)
+        && profile().keys().hasAny(["features"])
+        && profile().features[feature] == true;
+    }
+
+    function isSchoolwide() {
+      return hasAnyRole(["owner", "admin", "mtssLead"]) || hasFeature("admin");
+    }
+
+    function isOwner() {
+      return hasRole("owner");
+    }
+
+    function canUseAcademic() {
+      return isSchoolwide() || hasRole("academic") || hasFeature("academic");
+    }
+
+    function canUseBehavior() {
+      return isSchoolwide() || hasRole("behavior") || hasFeature("behavior");
+    }
+
+    function canUseStudentRecords() {
+      return canUseAcademic() || canUseBehavior();
+    }
+
+    function hasGradeAccess(grade) {
+      return isSchoolwide()
+        || (hasTeacherProfile()
+          && profile().keys().hasAny(["gradeLevels"])
+          && profile().gradeLevels.hasAny([grade]));
+    }
+
+    function canAccessStudent(studentId) {
+      return isSchoolwide()
+        || (studentId != null
+          && exists(/databases/$(database)/documents/students/$(studentId))
+          && hasGradeAccess(get(/databases/$(database)/documents/students/$(studentId)).data.grade));
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /teachers/{teacherId} {
+      allow get, list: if isSchoolwide()
+        || isSelf(teacherId)
+        || resource.data.shareEnabled == true;
+      allow create: if isOwner()
+        || (isSelf(teacherId)
+          && request.resource.data.keys().hasOnly([
+            "displayName",
+            "contactEmail"
+          ]));
+      allow update: if isOwner()
+        || (isSelf(teacherId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "displayName",
+            "contactEmail"
+          ]));
+      allow delete: if isOwner() && !isSelf(teacherId);
+
+      match /dailyPlans/{planId} {
+        allow read: if isSchoolwide()
+          || isSelf(teacherId)
+          || get(teacherPath(teacherId)).data.shareEnabled == true;
+        allow write: if isSchoolwide() || isSelf(teacherId);
+      }
+
+      match /{subdocument=**} {
+        allow read, write: if isSchoolwide() || isSelf(teacherId);
+      }
+    }
+
+    match /students/{studentId} {
+      allow read: if canUseStudentRecords() && hasGradeAccess(resource.data.grade);
+      allow write: if isSchoolwide();
+
+      match /{subdocument=**} {
+        allow read: if canUseStudentRecords() && canAccessStudent(studentId);
+        allow write: if isSchoolwide() || (canUseAcademic() && canAccessStudent(studentId));
+      }
+    }
+
+    // Hashed SIS identifiers are used only to reconcile admin roster imports.
+    match /studentImportKeys/{keyHash} {
+      allow read, write: if isSchoolwide();
+    }
+
+    // Required for authorized collection-group queries across student histories.
+    match /{path=**}/academicHistory/{historyId} {
+      allow read: if canUseStudentRecords() && canAccessStudent(resource.data.studentId);
+      allow create: if isSchoolwide() || (canUseAcademic() && canAccessStudent(request.resource.data.studentId));
+      allow update, delete: if isSchoolwide() || (canUseAcademic() && canAccessStudent(resource.data.studentId));
+    }
+
+    match /tasks/{taskId} {
+      allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
+      allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+    }
+
+    match /behaviorReteaches/{recordId} {
+      allow read: if canUseBehavior() && canAccessStudent(resource.data.studentId);
+      allow create: if canUseBehavior() && canAccessStudent(request.resource.data.studentId);
+      allow update, delete: if canUseBehavior() && canAccessStudent(resource.data.studentId);
+    }
+
+    match /behaviorLogs/{recordId} {
+      allow read, write: if canUseBehavior();
+    }
+
+    match /reports/{reportId} {
+      allow read, write: if canUseStudentRecords();
+    }
+
+    match /attendance/{recordId} {
+      allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
+      allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+    }
+
+    match /lifecycle/{recordId} {
+      allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
+      allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+    }
+
+    match /arLogs/{recordId} {
+      allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
+      allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+    }
+
+    match /deck/{deckId} {
+      allow read: if canUseAcademic() && (isSchoolwide() || resource.data.createdBy == request.auth.uid);
+      allow create: if canUseAcademic() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canUseAcademic() && (isSchoolwide() || resource.data.createdBy == request.auth.uid);
+    }
+
+    match /app/{document=**} {
+      allow read: if signedIn();
+      allow write: if isSchoolwide();
+    }
+  }
+}

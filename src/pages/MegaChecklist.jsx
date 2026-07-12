@@ -11,7 +11,6 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 
 /** Pastel palette + hook to mirror your app aesthetic */

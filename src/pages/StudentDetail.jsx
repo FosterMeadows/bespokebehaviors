@@ -15,7 +15,7 @@ import { useReports } from "../hooks/useReports.jsx";
 
 export default function StudentDetail() {
   const { name } = useParams();
-  const { user, profile } = useContext(AuthContext);
+  const { profile } = useContext(AuthContext);
 
   // 1) My own reports for this student
   const {
@@ -74,12 +74,9 @@ export default function StudentDetail() {
   const total = allReports.length;
   const display = allReports.slice(0, 6);
 
-  const [deleteId, setDeleteId] = useState(null);
-  const confirmDelete = (id) => setDeleteId(id);
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    await updateDoc(doc(db, "reports", deleteId), { served: true });
-    setDeleteId(null);
+  const handleDelete = async (id) => {
+    if (!window.confirm("Mark this intervention served?")) return;
+    await updateDoc(doc(db, "reports", id), { served: true });
   };
 
   if (loading) return <p className="text-lg">Loading…</p>;
@@ -173,7 +170,7 @@ export default function StudentDetail() {
         </div>
       </div>
 
-      {/* Reteach cards */}
+      {/* Academic Intervention cards */}
       <div className="space-y-6">
         {display.map((r, idx) => {
           const num = total - idx;
@@ -186,12 +183,12 @@ export default function StudentDetail() {
                 <span
                   className={`px-4 py-2 rounded-full text-base font-semibold ${badge} ring-2 ${ring}`}
                 >
-                  Reteach #{num}
+                  Academic Intervention #{num}
                 </span>
                 <div className="flex items-center space-x-4">
                   <span className="text-gray-600 text-sm">{formatDate(r.date)}</span>
                   <button
-                    onClick={() => confirmDelete(r.id)}
+                    onClick={() => handleDelete(r.id)}
                     className="text-red-600 hover:text-red-700 font-bold text-lg"
                     title="Mark served"
                   >
@@ -215,7 +212,7 @@ export default function StudentDetail() {
                   <span className="font-medium">Details:</span> {r.referralDetails}
                 </p>
               </div>
-              {/* Third reteach contact info */}
+              {/* Third Academic Intervention contact info */}
               {num === 3 && (
                 <div className={`${bg} p-4 border-t space-y-2`}>
                   <p>

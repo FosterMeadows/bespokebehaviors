@@ -152,6 +152,12 @@ export default function DailyPlan() {
         if (fetchSeq.current !== seq) return;
         setPlan(planData);
         setIsEditing(planData == null);
+      } catch (err) {
+        console.error("Failed to load daily plan", err);
+        if (fetchSeq.current !== seq) return;
+        setPlan(null);
+        setIsEditing(true);
+        setError("Could not load plan. You can still edit and save.");
       } finally {
         if (fetchSeq.current === seq) setLoading(false);
       }

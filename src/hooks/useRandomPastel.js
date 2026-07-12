@@ -1,19 +1,33 @@
 // src/hooks/useRandomPastel.js
-import { useEffect, useState } from "react";
+// Pastel palette generator with stable hashing and useful tokens.
 
-export const PASTEL_COLORS = [
-  { bg: "hsl(200, 60%, 90%)", text: "hsl(200, 50%, 40%)" },
-  { bg: "hsl(160, 60%, 90%)", text: "hsl(160, 50%, 32%)" },
-  { bg: "hsl(40, 80%, 92%)",  text: "hsl(40, 50%, 38%)" },
-  { bg: "hsl(280, 60%, 93%)", text: "hsl(280, 50%, 40%)" },
-  { bg: "hsl(340, 60%, 94%)", text: "hsl(340, 50%, 42%)" },
-];
+export function hashKey(key = "default") {
+  // djb2-ish, stable for strings
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash) + key.charCodeAt(i); // hash * 33 + c
+  }
+  return Math.abs(hash);
+}
 
-export default function useRandomPastel() {
-  const [color, setColor] = useState(null);
-  useEffect(() => {
-    setColor(PASTEL_COLORS[Math.floor(Math.random() * PASTEL_COLORS.length)]);
-    // eslint-disable-next-line
-  }, []);
-  return color || PASTEL_COLORS[0];
+// Base hues for calm, professional pastels (sky/teal/apricot/lilac/rose)
+const HUES = [200, 160, 40, 280, 340];
+
+function paletteFromHue(h) {
+  // Keep saturation moderate and lightness high; provide consistent tokens
+  const cardBg = `hsl(${h}, 60%, 96%)`;   // very light tint for cards
+  const chipBg = `hsl(${h}, 65%, 92%)`;   // slightly stronger for chips
+  const border = `hsl(${h}, 45%, 80%)`;   // soft border
+  const text  = `hsl(${h}, 35%, 28%)`;    // readable on light tints
+  return { cardBg, chipBg, border, text, hue: h };
+}
+
+/**
+ * useRandomPastel(key)
+ * Returns a palette object: { cardBg, chipBg, border, text, hue }
+ * based on a stable hash of the provided key (e.g., student id).
+ */
+export default function useRandomPastel(key) {
+  const hv = HUES[hashKey(String(key || "default")) % HUES.length];
+  return paletteFromHue(hv);
 }

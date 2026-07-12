@@ -11,7 +11,7 @@ import { db } from "./firebaseConfig";
 const studentsCol = collection(db, "students");
 
 export async function createStudent(name) {
-  return addDoc(studentsCol, { name, hasServedReteach: false, created: Date.now() });
+  return addDoc(studentsCol, { name, hasServedAcademic: false, created: Date.now() });
 }
 
 export async function fetchStudents() {

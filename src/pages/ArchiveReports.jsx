@@ -63,7 +63,7 @@ export default function ArchiveReports() {
       <h1 className="text-2xl font-semibold mb-6">Archive</h1>
 
       {Object.keys(grouped).length === 0 ? (
-        <p className="text-gray-600">No served reteaches yet.</p>
+        <p className="text-gray-600">No served Academic Interventions yet.</p>
       ) : (
         Object.entries(grouped).map(([date, list]) => (
           <section key={date} className="mb-8">

@@ -9,7 +9,7 @@ import { getFirestore } from "firebase/firestore";
 // 2) Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBQeW8KSNN2OjN6LXe1fz_Rj51dZq0uAww",
-  authDomain: "bespokebehaviors.firebaseapp.com",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "bespokebehaviors.firebaseapp.com",
   projectId: "bespokebehaviors",
   storageBucket: "bespokebehaviors.appspot.com",   // note the “appspot.com” domain
   messagingSenderId: "291062632545",
@@ -20,10 +20,13 @@ const firebaseConfig = {
 // 3) Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-console.log("🔥 Firebase authDomain:", app.options.authDomain);
 window.__FIREBASE_OPTIONS__ = app.options;
 
 // 4) Create & export the pieces you need
 export const auth     = getAuth(app);
 export const provider = new GoogleAuthProvider();
+provider.setCustomParameters({
+  prompt: "select_account",
+  hd: "bcswv.org"
+});
 export const db       = getFirestore(app);

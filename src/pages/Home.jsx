@@ -27,7 +27,7 @@ export default function Home() {
         </span>
       </Link>
 
-      {/* View My Reteaches */}
+      {/* View My Academic Interventions */}
       <Link
         to="/account/reports"
         className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
@@ -36,11 +36,11 @@ export default function Home() {
       >
         <MyReportsIcon className={`${iconBaseClass} text-gray-400 group-hover:text-green-600`} />
         <span className={`${textBaseClass} text-gray-800 group-hover:text-green-600`}>
-          View My Reteaches
+          View My Academic Interventions
         </span>
       </Link>
 
-      {/* Manage Reteaches */}
+      {/* Manage Academic Interventions */}
       <Link
         to="/dashboard"
         className="group transform transition duration-200 ease-out flex flex-col items-center justify-center
@@ -49,7 +49,7 @@ export default function Home() {
       >
         <ManageReportsIcon className={`${iconBaseClass} text-gray-400 group-hover:text-purple-600`} />
         <span className={`${textBaseClass} text-gray-800 group-hover:text-purple-600`}>
-          Manage Reteaches
+          Manage Academic Interventions
         </span>
       </Link>
 
