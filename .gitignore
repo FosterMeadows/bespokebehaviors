@@ -13,6 +13,19 @@ dist-ssr
 *.local
 .cert/
 
+# Local environment files (the QA switch is safe to share)
+.env
+.env.*
+!.env.qa
+!.env.example
+
+# Generated local reports and caches
+.firebase/
+.codex-doc/
+artifacts/
+output/
+tmp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

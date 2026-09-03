@@ -2,8 +2,8 @@
 // ——————————————————————————————————————————————
 // 1) Import what you need
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { connectAuthEmulator, getAuth, GoogleAuthProvider } from "firebase/auth";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 // (leave analytics out for now unless you actually use it)
 
 // 2) Your web app's Firebase configuration
@@ -30,3 +30,12 @@ provider.setCustomParameters({
   hd: "bcswv.org"
 });
 export const db       = getFirestore(app);
+
+export const qaEmulatorMode = import.meta.env.DEV
+  && import.meta.env.VITE_QA_EMULATORS === "true";
+
+if (qaEmulatorMode && !globalThis.__CHECKPOINT_QA_EMULATORS_CONNECTED__) {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  globalThis.__CHECKPOINT_QA_EMULATORS_CONNECTED__ = true;
+}

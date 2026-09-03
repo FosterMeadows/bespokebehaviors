@@ -1,365 +1,382 @@
-// src/pages/History.jsx
 import React, { useContext, useEffect, useMemo, useState } from "react";
+import {
+  BookOpenCheck,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Filter,
+  History as HistoryIcon,
+  MapPin,
+  ShieldCheck,
+  UserRound
+} from "lucide-react";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { useSearchParams } from "react-router";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
-import {
-  collection,
-  collectionGroup,
-  query,
-  where,
-  orderBy,
-  limit,
-  startAfter,
-  getDocs,
-  onSnapshot,
-  Timestamp
-} from "firebase/firestore";
-import { CalendarDays, History as HistoryIcon, SlidersHorizontal } from "lucide-react";
+import { canUseAdmin } from "../utils/access";
+import { servedRecordDate } from "../utils/behaviorAnalytics.js";
 
-// --- small utils ---
-function yyyymmdd(d = new Date()) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d;
-}
-function toTsStart(yyyy_mm_dd) {
-  const [y, m, d] = (yyyy_mm_dd || "").split("-").map(Number);
-  return Timestamp.fromDate(new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0));
-}
-function toTsEnd(yyyy_mm_dd) {
-  const [y, m, d] = (yyyy_mm_dd || "").split("-").map(Number);
-  return Timestamp.fromDate(new Date(y, (m || 1) - 1, d || 1, 23, 59, 59, 999));
+function toDate(value) {
+  if (!value) return null;
+  const date = value?.toDate
+    ? value.toDate()
+    : typeof value?.seconds === "number"
+      ? new Date(value.seconds * 1000)
+      : typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+        ? new Date(`${value}T00:00:00`)
+        : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const PAGE_SIZE = 25;
+function toMillis(value) {
+  return toDate(value)?.getTime() || 0;
+}
 
-function HistoryTabButton({ active, children, onClick }) {
+function formatDate(value) {
+  const date = toDate(value);
+  if (!date) return "Date Unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
+}
+
+function formatDateTime(value) {
+  const date = toDate(value);
+  if (!date) return "Not Recorded";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatStudentDetail(student) {
+  if (!student) return "Student";
+  const homeroom = String(student.homeroom || "").trim();
+  return [student.grade ? `Grade ${student.grade}` : "", homeroom].filter(Boolean).join(" • ") || "Student";
+}
+
+function HistoryTab({ active, icon, children, onClick }) {
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
-      className={`h-8 rounded-md px-3 text-xs font-semibold transition active:translate-y-px focus:outline-none focus:ring-2 focus:ring-sky-400 ${
-        active ? "bg-white text-sky-800 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
+      className={`inline-flex h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-sky-400 ${
+        active ? "bg-white text-sky-900 shadow-sm" : "text-slate-600 hover:bg-white/70 hover:text-slate-900"
       }`}
     >
+      {React.createElement(icon, { className: "h-4 w-4", "aria-hidden": true })}
       {children}
     </button>
   );
 }
 
-function historyErrorMessage(error, fallback) {
-  const message = error?.message || "";
-  if (error?.code === "permission-denied" || /insufficient permissions/i.test(message)) {
-    return "You do not have permission to view these records.";
-  }
-  if (error?.code === "failed-precondition" || /requires .*index/i.test(message)) {
-    return "This history view is being prepared. Try again in a few minutes.";
-  }
-  return fallback;
+function EmptyHistory({ children }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center text-sm text-slate-500">
+      {children}
+    </div>
+  );
 }
 
-export default function ARHistoryPage() {
-  const { user } = useContext(AuthContext);
+function outcomePresentation(status) {
+  if (status === "present") return { label: "Present", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  if (status === "removed") return { label: "Removed", tone: "border-slate-200 bg-slate-100 text-slate-600" };
+  if (status === "no_show") return { label: "No Show", tone: "border-red-200 bg-red-50 text-red-800" };
+  return { label: "Selected", tone: "border-sky-200 bg-sky-50 text-sky-800" };
+}
 
-  // --- students cache for filter + display ---
+function BehaviorHistory({ records, studentsMap, getTeacherLabel, loading }) {
+  if (loading && records.length === 0) return <EmptyHistory>Loading Behavior History…</EmptyHistory>;
+  if (records.length === 0) return <EmptyHistory>No served Behavior entries yet.</EmptyHistory>;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-base font-bold text-slate-950">Behavior History</h2>
+        <p className="mt-0.5 text-sm text-slate-600">{records.length} Served {records.length === 1 ? "Entry" : "Entries"}</p>
+      </div>
+      <div className="divide-y divide-slate-200">
+        {records.map(record => {
+          const student = studentsMap[record.studentId];
+          const studentName = record.studentName || student?.displayName || "Unknown Student";
+          const servedWith = record.servedByName || getTeacherLabel(record.servedByUid);
+          return (
+            <article key={record.id} className="relative bg-white p-4 pl-5 transition hover:bg-sky-50/30">
+              <div className="absolute bottom-0 left-0 top-0 w-1 bg-violet-400" aria-hidden="true" />
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-bold text-slate-950">{record.context || "Behavior Reteach"}</h3>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-900">
+                      <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                      {studentName}
+                    </span>
+                    <span>{formatStudentDetail(student)}</span>
+                    {record.location && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                        {record.location}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Served
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                  <CalendarDays className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                  {formatDateTime(record.servedAt || record.reteachDate)}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-emerald-800">
+                  <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                  Served with {servedWith}
+                </span>
+              </div>
+
+              {record.note && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Reteach Note</div>
+                  <p className="mt-1 text-sm leading-6 text-slate-800">{record.note}</p>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function AcademicHistory({ sessions, studentsMap, getTeacherLabel, loading }) {
+  if (loading && sessions.length === 0) return <EmptyHistory>Loading Academic Sessions…</EmptyHistory>;
+  if (sessions.length === 0) return <EmptyHistory>No Academic Sessions have been recorded yet.</EmptyHistory>;
+
+  return (
+    <section className="space-y-3">
+      <div className="px-1">
+        <h2 className="text-base font-bold text-slate-950">Academic Session History</h2>
+        <p className="mt-0.5 text-sm text-slate-600">{sessions.length} {sessions.length === 1 ? "Session" : "Sessions"} Recorded</p>
+      </div>
+      {sessions.map((session, index) => {
+        const roster = session.roster || [];
+        const outcomes = session.outcomes || {};
+        const outcomeCounts = roster.reduce((counts, studentId) => {
+          const status = outcomes[studentId]?.status || "selected";
+          counts[status] = (counts[status] || 0) + 1;
+          return counts;
+        }, {});
+        const isLive = session.status === "live";
+        return (
+          <article key={session.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-bold text-slate-950">{formatDate(session.date || session.id)}</h3>
+                  <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                    {session.laneLabel || "Legacy Session"}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                    Hosted by {session.hostName || getTeacherLabel(session.hostUid)}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Started {formatDateTime(session.startedAt)}
+                  </span>
+                  {!isLive && session.endedAt && <span>Ended {formatDateTime(session.endedAt)}</span>}
+                </div>
+              </div>
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${isLive ? "border-sky-200 bg-sky-50 text-sky-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                {isLive ? "In Progress" : "Completed"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">{roster.length} Rostered</span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">{outcomeCounts.present || 0} Present</span>
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{outcomeCounts.removed || 0} Removed</span>
+              <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-800">{outcomeCounts.no_show || 0} No Show{(outcomeCounts.no_show || 0) === 1 ? "" : "s"}</span>
+            </div>
+
+            <details open={index === 0} className="group">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                View Student Outcomes
+              </summary>
+              <div className="divide-y divide-slate-100 border-t border-slate-100">
+                {roster.map(studentId => {
+                  const student = studentsMap[studentId];
+                  const outcome = outcomes[studentId] || { status: "selected" };
+                  const presentation = outcomePresentation(outcome.status);
+                  return (
+                    <div key={studentId} className="flex items-center gap-3 px-4 py-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xs font-bold text-slate-700">
+                        {(student?.displayName || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-slate-950">{student?.displayName || "Unknown Student"}</div>
+                        <div className="truncate text-xs text-slate-500">
+                          {formatStudentDetail(student)}
+                          {outcome.updatedByName ? ` • Recorded by ${outcome.updatedByName}` : ""}
+                        </div>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${presentation.tone}`}>{presentation.label}</span>
+                    </div>
+                  );
+                })}
+                {roster.length === 0 && <div className="px-4 py-6 text-center text-sm text-slate-500">No students were recorded in this session.</div>}
+              </div>
+            </details>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+export default function HistoryPage() {
+  const { user, profile } = useContext(AuthContext);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => searchParams.get("tab") === "academic" ? "academic" : "behavior");
   const [studentsMap, setStudentsMap] = useState({});
   const [teachersMap, setTeachersMap] = useState({});
-  const studentsList = useMemo(() => {
-    return Object.entries(studentsMap)
-      .map(([id, s]) => ({
-        id,
-        name: s.displayName || id,
-        grade: s.grade || "",
-        homeroom: s.homeroom || ""
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [studentsMap]);
+  const [behaviorRecords, setBehaviorRecords] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState({ behavior: true, academic: true });
+  const [errors, setErrors] = useState({ behavior: "", academic: "" });
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      query(collection(db, "students"), orderBy("displayName", "asc")),
-      snap => {
-        const map = {};
-        for (const d of snap.docs) map[d.id] = d.data();
-        setStudentsMap(map);
-      },
-      err => console.error("[History] students listener", err?.code, err?.message)
-    );
-    return () => unsub();
-  }, []);
+    if (!user) return undefined;
+    const behaviorQuery = canUseAdmin(profile) ? collection(db, "behaviorReteaches") : null;
+    const unsubs = [
+      onSnapshot(query(collection(db, "students"), orderBy("displayName", "asc")), snap => {
+        setStudentsMap(Object.fromEntries(snap.docs.map(item => [item.id, item.data()])));
+      }),
+      onSnapshot(collection(db, "teachers"), snap => {
+        setTeachersMap(Object.fromEntries(snap.docs.map(item => [item.id, item.data()])));
+      }),
+      behaviorQuery && onSnapshot(behaviorQuery, snap => {
+        setBehaviorRecords(snap.docs
+          .map(item => ({ id: item.id, ...item.data() }))
+          .filter(record => record.status === "served"));
+        setLoading(current => ({ ...current, behavior: false }));
+      }, error => {
+        console.error("[History] behavior", error);
+        setErrors(current => ({ ...current, behavior: "Behavior History could not be loaded." }));
+        setLoading(current => ({ ...current, behavior: false }));
+      }),
+      onSnapshot(collection(db, "academicSessions"), snap => {
+        setSessions(snap.docs.map(item => ({ id: item.id, ...item.data() })));
+        setLoading(current => ({ ...current, academic: false }));
+      }, error => {
+        console.error("[History] academic sessions", error);
+        setErrors(current => ({ ...current, academic: "Academic Session History could not be loaded." }));
+        setLoading(current => ({ ...current, academic: false }));
+      })
+    ].filter(Boolean);
+    if (!behaviorQuery) setLoading(current => ({ ...current, behavior: false }));
+    return () => unsubs.forEach(unsub => unsub());
+  }, [profile, user]);
 
-  useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "teachers"),
-      snap => {
-        const map = {};
-        for (const d of snap.docs) map[d.id] = d.data();
-        setTeachersMap(map);
-      },
-      err => console.error("[History] teachers listener", err?.code, err?.message)
-    );
-    return () => unsub();
-  }, []);
+  const sortedBehavior = useMemo(() => [...behaviorRecords].sort(
+    (a, b) => toMillis(b.servedAt || b.reteachDate) - toMillis(a.servedAt || a.reteachDate)
+  ), [behaviorRecords]);
 
-  // --- filters ---
-  const [tab, setTab] = useState("attendance"); // "attendance" | "completed"
-  const [filters, setFilters] = useState({
-    start: yyyymmdd(daysAgo(30)),
-    end: yyyymmdd(new Date()),
-    studentId: ""
-  });
+  const behaviorFilters = useMemo(() => ({
+    start: searchParams.get("start") || "",
+    end: searchParams.get("end") || "",
+    grade: searchParams.get("grade") || "",
+    location: searchParams.get("location") || "",
+    context: searchParams.get("context") || ""
+  }), [searchParams]);
 
-  // --- attendance state ---
-  const [attRows, setAttRows] = useState([]);
-  const [attCursor, setAttCursor] = useState(null);
-  const [attDone, setAttDone] = useState(false);
-  const [attLoading, setAttLoading] = useState(false);
-  const [attError, setAttError] = useState("");
+  const filteredBehavior = useMemo(() => sortedBehavior.filter(record => {
+    const servedDate = servedRecordDate(record);
+    const day = servedDate
+      ? `${servedDate.getFullYear()}-${String(servedDate.getMonth() + 1).padStart(2, "0")}-${String(servedDate.getDate()).padStart(2, "0")}`
+      : "";
+    return (!behaviorFilters.start || day >= behaviorFilters.start)
+      && (!behaviorFilters.end || day <= behaviorFilters.end)
+      && (!behaviorFilters.grade || String(record.grade || "Unknown grade") === behaviorFilters.grade)
+      && (!behaviorFilters.location || String(record.location || "Not recorded") === behaviorFilters.location)
+      && (!behaviorFilters.context || String(record.context || "Not recorded") === behaviorFilters.context);
+  }), [behaviorFilters, sortedBehavior]);
 
-  // --- completed tasks state ---
-  const [compRows, setCompRows] = useState([]);
-  const [compCursor, setCompCursor] = useState(null);
-  const [compDone, setCompDone] = useState(false);
-  const [compLoading, setCompLoading] = useState(false);
-  const [compError, setCompError] = useState("");
+  const activeBehaviorFilters = Object.entries(behaviorFilters).filter(([, value]) => value);
 
-  // --- metrics (hooks must be unconditional) ---
-  const attUniqueStudents = useMemo(
-    () => new Set(attRows.map(r => r.studentId)).size,
-    [attRows]
-  );
-  const compUniqueStudents = useMemo(
-    () => new Set(compRows.map(r => r.studentId)).size,
-    [compRows]
-  );
-
-  // --- loaders ---
-  async function loadAttendance(reset = false) {
-    if (attLoading) return;
-    if (attDone && !reset) return;
-
-    setAttLoading(true);
-    setAttError("");
-    try {
-      const cons = [];
-      if (filters.start) cons.push(where("date", ">=", filters.start));
-      if (filters.end) cons.push(where("date", "<=", filters.end));
-      if (filters.studentId) cons.push(where("studentId", "==", filters.studentId));
-
-      const qBase = query(
-        collection(db, "attendance"),
-        ...cons,
-        orderBy("date", "desc"),
-        limit(PAGE_SIZE)
-      );
-
-      const cursor = reset ? null : attCursor;
-      const qPaged = cursor ? query(qBase, startAfter(cursor)) : qBase;
-      const snap = await getDocs(qPaged);
-
-      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const last = snap.docs[snap.docs.length - 1] || null;
-
-      setAttRows(prev => (reset ? rows : [...prev, ...rows]));
-      setAttCursor(last);
-      setAttDone(rows.length < PAGE_SIZE);
-    } catch (e) {
-      setAttError(historyErrorMessage(e, "Attendance history could not be loaded."));
-    } finally {
-      setAttLoading(false);
-    }
-  }
-
-  async function loadCompleted(reset = false) {
-    if (compLoading) return;
-    if (compDone && !reset) return;
-
-    setCompLoading(true);
-    setCompError("");
-    try {
-      const cons = [];
-      if (filters.start) cons.push(where("completedAt", ">=", toTsStart(filters.start)));
-      if (filters.end) cons.push(where("completedAt", "<=", toTsEnd(filters.end)));
-      if (filters.studentId) cons.push(where("studentId", "==", filters.studentId));
-
-      const qBase = query(
-        collectionGroup(db, "academicHistory"),
-        ...cons,
-        orderBy("completedAt", "desc"),
-        limit(PAGE_SIZE)
-      );
-
-      const cursor = reset ? null : compCursor;
-      const qPaged = cursor ? query(qBase, startAfter(cursor)) : qBase;
-      const snap = await getDocs(qPaged);
-
-      const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const last = snap.docs[snap.docs.length - 1] || null;
-
-      setCompRows(prev => (reset ? rows : [...prev, ...rows]));
-      setCompCursor(last);
-      setCompDone(rows.length < PAGE_SIZE);
-    } catch (e) {
-      setCompError(historyErrorMessage(e, "Completed task history could not be loaded."));
-    } finally {
-      setCompLoading(false);
-    }
-  }
-
-  // reset + first page whenever filters or tab change
-  useEffect(() => {
-    if (!user) return;
-    if (tab === "attendance") {
-      setAttRows([]); setAttCursor(null); setAttDone(false);
-      loadAttendance(true);
-    } else {
-      setCompRows([]); setCompCursor(null); setCompDone(false);
-      loadCompleted(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, filters, user]);
-
-  // --- render helpers ---
-  const getStudentName = (sid) => studentsMap[sid]?.displayName || sid || "—";
-  const getStudentDetail = (sid) => {
-    const student = studentsMap[sid];
-    if (!student) return "—";
-    return [student.grade ? `Grade ${student.grade}` : "", student.homeroom || ""].filter(Boolean).join(" • ") || "—";
-  };
-  const getTeacherLabel = (uidOrName) => {
-    if (!uidOrName) return "—";
-    const teacher = teachersMap[uidOrName];
-    return teacher?.displayName || teacher?.contactEmail || uidOrName;
-  };
-  const fmtDate = (v) => {
-    try {
-      const date = v?.toDate
-        ? v.toDate()
-        : typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)
-          ? new Date(`${v}T00:00:00`)
-          : new Date(v);
-      if (Number.isNaN(date.getTime())) return "—";
-      return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
-    } catch { return "—"; }
+  const clearBehaviorFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    ["start", "end", "grade", "location", "context"].forEach(key => next.delete(key));
+    setSearchParams(next);
   };
 
-  // don’t early-return (keeps hooks order stable)
-  const blocked = !user;
-  const blockedMsg = "Sign in required.";
+  const sortedSessions = useMemo(() => [...sessions].sort(
+    (a, b) => toMillis(b.startedAt || b.date || b.id) - toMillis(a.startedAt || a.date || a.id)
+  ), [sessions]);
 
-  const activeRows = tab === "attendance" ? attRows : compRows;
-  const activeUniqueStudents = tab === "attendance" ? attUniqueStudents : compUniqueStudents;
-  const activeLoading = tab === "attendance" ? attLoading : compLoading;
-  const activeError = tab === "attendance" ? attError : compError;
+  const getTeacherLabel = value => {
+    if (!value) return "Unknown Staff Member";
+    const teacher = teachersMap[value];
+    if (teacher) return teacher.displayName || teacher.contactEmail || "Staff Member";
+    if (/^[A-Za-z0-9_-]{20,}$/.test(String(value))) return "Staff Member";
+    return String(value);
+  };
+
+  if (!user) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">Sign in required.</div>;
+
+  const activeError = errors[tab];
 
   return (
     <div className="space-y-4">
-      {blocked ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">{blockedMsg}</div>
-      ) : (
+      <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-700 shadow-sm ring-1 ring-sky-200">
+            <HistoryIcon className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.12em] text-sky-800">Admin Workspace</div>
+            <div className="mt-0.5 text-sm text-slate-600">Review served Behavior entries and daily Academic Sessions.</div>
+          </div>
+        </div>
+        <div className="inline-flex self-start rounded-lg border border-slate-200 bg-slate-100 p-1 sm:self-auto" role="tablist" aria-label="History type">
+          <HistoryTab active={tab === "behavior"} icon={ShieldCheck} onClick={() => setTab("behavior")}>Behavior</HistoryTab>
+          <HistoryTab active={tab === "academic"} icon={BookOpenCheck} onClick={() => setTab("academic")}>Academic</HistoryTab>
+        </div>
+      </header>
+
+      {activeError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{activeError}</div>
+      ) : tab === "behavior" ? (
         <>
-          <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-700 shadow-sm ring-1 ring-sky-200">
-                <HistoryIcon className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div>
-                <div className="text-xs font-bold uppercase tracking-[0.12em] text-sky-800">Admin workspace</div>
-                <div className="mt-0.5 text-sm text-slate-600">Review attendance and completed academic work.</div>
-              </div>
+          {activeBehaviorFilters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950">
+              <Filter className="h-4 w-4" aria-hidden="true" />
+              <span className="font-bold">Analytics drilldown:</span>
+              {behaviorFilters.start && <span>From {formatDate(behaviorFilters.start)}</span>}
+              {behaviorFilters.end && <span>Through {formatDate(behaviorFilters.end)}</span>}
+              {behaviorFilters.grade && <span>Grade {behaviorFilters.grade}</span>}
+              {behaviorFilters.location && <span>Location: {behaviorFilters.location}</span>}
+              {behaviorFilters.context && <span>Category: {behaviorFilters.context}</span>}
+              <button type="button" onClick={clearBehaviorFilters} className="ml-auto font-bold text-violet-700 hover:text-violet-950">Clear filters</button>
             </div>
-            <div className="inline-flex self-start gap-1 rounded-md border border-slate-200 bg-slate-50/70 p-0.5 sm:self-auto">
-              <HistoryTabButton active={tab === "attendance"} onClick={() => setTab("attendance")}>Attendance</HistoryTabButton>
-              <HistoryTabButton active={tab === "completed"} onClick={() => setTab("completed")}>Completed Tasks</HistoryTabButton>
-            </div>
-          </header>
-
-          <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              <div>
-                <h2 className="text-base font-bold text-slate-950">History filters</h2>
-                <p className="mt-0.5 text-sm text-slate-600">Narrow records by date range or student.</p>
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-[11rem_11rem_minmax(18rem,1fr)]">
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-600">Start date</span>
-                <input type="date" className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" value={filters.start} onChange={e => setFilters(f => ({ ...f, start: e.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-600">End date</span>
-                <input type="date" className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" value={filters.end} onChange={e => setFilters(f => ({ ...f, end: e.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-slate-600">Student</span>
-                <select className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" value={filters.studentId} onChange={e => setFilters(f => ({ ...f, studentId: e.target.value }))}>
-                  <option value="">All students</option>
-                  {studentsList.map(s => <option key={s.id} value={s.id}>{s.name}{s.homeroom ? ` • ${s.homeroom}` : ""}{s.grade ? ` • G${s.grade}` : ""}</option>)}
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md shadow-slate-200/40">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-950">{tab === "attendance" ? "Attendance history" : "Completed task history"}</h2>
-                <p className="mt-0.5 text-sm text-slate-600">{activeRows.length} {activeRows.length === 1 ? "record" : "records"} across {activeUniqueStudents} {activeUniqueStudents === 1 ? "student" : "students"}</p>
-              </div>
-              {activeLoading && <span className="text-xs font-semibold text-sky-700">Loading records…</span>}
-            </div>
-
-            {activeError ? (
-              <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{activeError}</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full table-fixed text-sm">
-                  <thead className="bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                    {tab === "attendance" ? (
-                      <tr><th className="w-36 px-4 py-2.5">Date</th><th className="px-4 py-2.5">Student</th><th className="w-60 px-4 py-2.5">Grade / Homeroom</th><th className="w-64 px-4 py-2.5">Served by</th></tr>
-                    ) : (
-                      <tr><th className="w-36 px-4 py-2.5">Completed</th><th className="w-60 px-4 py-2.5">Student</th><th className="w-36 px-4 py-2.5">Subject</th><th className="px-4 py-2.5">Assignment</th><th className="w-64 px-4 py-2.5">Completed by</th></tr>
-                    )}
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {tab === "attendance" ? attRows.map(r => (
-                      <tr key={r.id} className="hover:bg-sky-50/40">
-                        <td className="px-4 py-3 tabular-nums text-slate-600"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-slate-400" />{fmtDate(r.date)}</span></td>
-                        <td className="truncate px-4 py-3 font-semibold text-slate-950">{getStudentName(r.studentId)}</td>
-                        <td className="truncate px-4 py-3 text-slate-600">{getStudentDetail(r.studentId)}</td>
-                        <td className="truncate px-4 py-3 text-slate-600">{getTeacherLabel(r.by)}</td>
-                      </tr>
-                    )) : compRows.map(h => (
-                      <tr key={h.id} className="hover:bg-sky-50/40">
-                        <td className="px-4 py-3 tabular-nums text-slate-600">{fmtDate(h.completedAt)}</td>
-                        <td className="truncate px-4 py-3 font-semibold text-slate-950">{getStudentName(h.studentId)}</td>
-                        <td className="px-4 py-3"><span className="rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800">{h.subject || "Other"}</span></td>
-                        <td className="truncate px-4 py-3 text-slate-700">{h.title || "Untitled assignment"}</td>
-                        <td className="truncate px-4 py-3 text-slate-600">{getTeacherLabel(h.completedBy)}</td>
-                      </tr>
-                    ))}
-                    {activeRows.length === 0 && !activeLoading && <tr><td colSpan={tab === "attendance" ? 4 : 5} className="px-4 py-10 text-center text-sm text-slate-500">No records match these filters.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {!activeError && ((tab === "attendance" && !attDone) || (tab === "completed" && !compDone)) && (
-              <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
-                <button type="button" className="inline-flex h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50" disabled={activeLoading} onClick={() => tab === "attendance" ? loadAttendance(false) : loadCompleted(false)}>
-                  {activeLoading ? "Loading…" : "Load more"}
-                </button>
-              </div>
-            )}
-          </section>
+          )}
+          <BehaviorHistory records={filteredBehavior} studentsMap={studentsMap} getTeacherLabel={getTeacherLabel} loading={loading.behavior} />
         </>
+      ) : (
+        <AcademicHistory sessions={sortedSessions} studentsMap={studentsMap} getTeacherLabel={getTeacherLabel} loading={loading.academic} />
       )}
     </div>
   );

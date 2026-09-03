@@ -8,6 +8,7 @@
 // - Zero external deps.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { reportClientError } from "../services/clientErrors";
 
 const LS_KEY = "__omnitool_client_logs_v1";
 const MAX_BUFFER = 500; // cap to avoid memory balloons
@@ -118,7 +119,7 @@ export function DebugOverlay() {
         <div style={{ width: 420, height: 260, display: "flex", flexDirection: "column", background: "#111", color: "#eee", border: "1px solid #444", borderRadius: 10, boxShadow: "0 6px 30px rgba(0,0,0,.35)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, borderBottom: "1px solid #333" }}>
             <strong style={{ fontSize: 12, letterSpacing: .3 }}>Client Logs</strong>
-            <select value={filter} onChange={(e) => setFilter(e.target.value)} style={{ marginLeft: 8, background: "#000", color: "#eee", border: "1px solid #444", borderRadius: 6, padding: "2px 6px", fontSize: 12 }}>
+            <select data-native-chevron value={filter} onChange={(e) => setFilter(e.target.value)} style={{ marginLeft: 8, background: "#000", color: "#eee", border: "1px solid #444", borderRadius: 6, padding: "2px 6px", fontSize: 12 }}>
               <option value="all">all</option>
               <option value="log">log</option>
               <option value="warn">warn</option>
@@ -154,4 +155,55 @@ export function useInstallClientLogger() {
     if (!import.meta.env.DEV) return undefined;
     if (installed) return; const off = installClientLogger(); setInstalled(true); return off;
   }, [installed]);
+}
+
+export function useProductionErrorReporter(user) {
+  useEffect(() => {
+    if (import.meta.env.DEV || !user?.uid) return undefined;
+
+    const originalError = console.error;
+    console.error = (...args) => {
+      const error = args.find(value => value instanceof Error) || args.find(value => value?.code) || new Error("console-error");
+      void reportClientError(error, { source: "console" });
+      originalError(...args);
+    };
+    const onError = event => void reportClientError(event.error || new Error("window-error"), { source: "window" });
+    const onRejection = event => void reportClientError(event.reason || new Error("unhandled-rejection"), { source: "promise" });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      console.error = originalError;
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, [user?.uid]);
+}
+
+export class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false, reference: "" };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    void reportClientError(error, { source: "react-render" }).then(reference => this.setState({ reference }));
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <main className="flex min-h-svh items-center justify-center bg-slate-50 px-5">
+        <section className="w-full max-w-lg rounded-2xl border border-red-200 bg-white p-7 text-center shadow-xl">
+          <h1 className="text-xl font-bold text-slate-950">Checkpoint needs to reload</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">The problem was recorded without student names, notes, or form contents. Reload the app and try again.</p>
+          {this.state.reference && <p className="mt-3 text-sm font-bold text-red-800">Support reference: {this.state.reference}</p>}
+          <button type="button" onClick={() => window.location.reload()} className="mt-5 h-11 rounded-lg bg-slate-900 px-5 text-sm font-bold text-white">Reload Checkpoint</button>
+        </section>
+      </main>
+    );
+  }
 }

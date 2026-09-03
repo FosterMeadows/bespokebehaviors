@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+/* Keep native select behavior while standardizing the closed-control chevron. */
+select:not([multiple]):not([data-native-chevron]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364758b' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem 1rem;
+  padding-right: 2.5rem;
+}
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.55in;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .student-history-print-root,
+  .student-history-print-root * {
+    visibility: visible !important;
+  }
+
+  .student-history-print-root {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+
+  .student-history-print-root section {
+    break-before: auto;
+  }
+
+  .student-history-print-root article {
+    break-inside: avoid;
+  }
+}
+
 @keyframes behavior-step-in {
   from {
     opacity: 0;

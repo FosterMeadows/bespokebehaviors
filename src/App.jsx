@@ -1,6 +1,6 @@
 // src/App.jsx
 import React, { useContext } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router";
 import { AuthContext } from "./AuthContext.jsx";
 import Layout from "./components/Layout.jsx";
 import BehaviorLog from "./pages/BehaviorLog.jsx";
@@ -18,18 +18,32 @@ import AcademicDashboard from "./pages/AcademicDashboard.jsx";
 import BehaviorWorkspace from "./pages/BehaviorWorkspace.jsx";
 import BulkImportStudents from "./pages/Admin/BulkImportStudents.jsx";
 import TeacherAccess from "./pages/Admin/TeacherAccess.jsx";
+import HomeContacts from "./pages/Admin/HomeContacts.jsx";
+import OperationalDashboard from "./pages/Admin/OperationalDashboard.jsx";
+import SupportReports from "./pages/Admin/SupportReports.jsx";
+import Analytics from "./pages/Admin/Analytics.jsx";
 import OneMinuteHuman from "./pages/OneMinuteHuman.jsx";
 import ARHistoryPage from "./pages/History.jsx";
 import Account from "./pages/Account.jsx";
 import StudentsList from "./pages/StudentsList.jsx";
+import CommandCenter from "./pages/CommandCenter.jsx";
+import StudentSupports from "./pages/StudentSupports.jsx";
+import StandardsPulse from "./pages/StandardsPulse.jsx";
+import StandardPulseDetail from "./pages/StandardPulseDetail.jsx";
+import LessonSequences from "./pages/LessonSequences.jsx";
+import LessonSequenceEditor from "./pages/LessonSequenceEditor.jsx";
+import ActiveSequence from "./pages/ActiveSequence.jsx";
 import {
   canUseAcademic,
   canUseAdmin,
   canUseBehavior,
-  canUseLegacyTools
+  canUseCommandCenter,
+  canUseLegacyTools,
+  canOverrideBehaviorThreshold,
+  hasConfiguredAccess
 } from "./utils/access";
 
-import { useInstallClientLogger, DebugOverlay } from "./debug/ClientLogger.jsx";
+import { useInstallClientLogger, useProductionErrorReporter, DebugOverlay } from "./debug/ClientLogger.jsx";
 
 function LoadingScreen() {
   return (
@@ -54,7 +68,8 @@ function RequireAccess({ allowed, children, message }) {
 export default function App() {
   useInstallClientLogger();
 
-  const { user, profile, profileLoading, authError, authDebug, login, logout, devLogin } = useContext(AuthContext);
+  const { user, profile, profileLoading, authError, login, logout, qaLogin, qaEmulatorMode } = useContext(AuthContext);
+  useProductionErrorReporter(user);
   const location = useLocation();
   const isPublic = location.pathname.startsWith("/share");
 
@@ -71,12 +86,7 @@ export default function App() {
   }
 
   if (!user) {
-    return (
-      <>
-        <SignInPage onSignIn={login} onDevSignIn={devLogin} authError={authError} authDebug={import.meta.env.DEV ? authDebug : ""} />
-        <DebugOverlay />
-      </>
-    );
+    return <SignInPage onSignIn={login} authError={authError} qaLogin={qaLogin} qaEmulatorMode={qaEmulatorMode} />;
   }
 
   if (profileLoading) {
@@ -88,15 +98,33 @@ export default function App() {
     );
   }
 
+  if (profile?.disabled === true) {
+    return (
+      <Layout displayName={profile?.displayName || user.displayName} logout={logout} profile={profile}>
+        <InterventionHome profile={profile} user={user} logout={logout} />
+      </Layout>
+    );
+  }
+
+  if (!hasConfiguredAccess(profile)) {
+    return (
+      <Layout displayName={profile?.displayName || user.displayName} logout={logout} profile={profile}>
+        <InterventionHome profile={profile} user={user} logout={logout} />
+      </Layout>
+    );
+  }
+
   const academicAllowed = canUseAcademic(profile);
   const behaviorAllowed = canUseBehavior(profile);
+  const commandCenterAllowed = canUseCommandCenter(profile);
   const legacyAllowed = canUseLegacyTools(profile);
   const adminAllowed = canUseAdmin(profile);
+  const homeContactAdminAllowed = canOverrideBehaviorThreshold(profile);
 
   return (
     <Layout displayName={profile?.displayName || user.displayName} logout={logout} profile={profile}>
       <Routes>
-        <Route path="/" element={<InterventionHome profile={profile} user={user} />} />
+        <Route path="/" element={<InterventionHome profile={profile} user={user} logout={logout} />} />
         <Route
           path="/academic"
           element={
@@ -114,6 +142,62 @@ export default function App() {
           }
         />
         <Route path="/profile" element={<Account />} />
+        <Route
+          path="/command-center"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="The Teacher Command Center is available only to the owner.">
+              <CommandCenter />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/standards"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="Standards Pulse is available only to the owner.">
+              <StandardsPulse />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/student-supports"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="Student Supports is available only to the owner.">
+              <StudentSupports />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/standards/:standardCode"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="Standards Pulse is available only to the owner.">
+              <StandardPulseDetail />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/sequences"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="Sequences are available only to the owner.">
+              <LessonSequences />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/sequences/active"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="The Active sequence view is available only to the owner.">
+              <ActiveSequence />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/command-center/sequences/:sequenceId"
+          element={
+            <RequireAccess allowed={commandCenterAllowed} message="Sequences are available only to the owner.">
+              <LessonSequenceEditor />
+            </RequireAccess>
+          }
+        />
         <Route
           path="/students"
           element={
@@ -200,6 +284,38 @@ export default function App() {
           element={
             <RequireAccess allowed={adminAllowed} message="Schoolwide history requires an admin, MTSS lead, or owner role.">
               <ARHistoryPage />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/admin/analytics"
+          element={
+            <RequireAccess allowed={adminAllowed} message="Behavior analytics requires an admin, MTSS lead, or owner role.">
+              <Analytics />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/admin/operations"
+          element={
+            <RequireAccess allowed={adminAllowed} message="Operational health requires an admin, MTSS lead, or owner role.">
+              <OperationalDashboard />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/admin/support"
+          element={
+            <RequireAccess allowed={adminAllowed} message="Support reports require an admin, MTSS lead, or owner role.">
+              <SupportReports />
+            </RequireAccess>
+          }
+        />
+        <Route
+          path="/admin/home-contacts"
+          element={
+            <RequireAccess allowed={homeContactAdminAllowed} message="Home contact administration requires an admin or owner role.">
+              <HomeContacts />
             </RequireAccess>
           }
         />

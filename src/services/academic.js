@@ -7,16 +7,19 @@
 
 import { db } from "../firebaseConfig";
 import {
-  addDoc, collection, doc, getDoc, setDoc, updateDoc,
+  addDoc, collection, doc, getDoc, updateDoc,
   serverTimestamp, onSnapshot, query, where, orderBy,
-  arrayUnion, arrayRemove, writeBatch, deleteDoc, getDocs, limit, startAfter, runTransaction
+  arrayRemove, writeBatch, deleteDoc, getDocs, limit, startAfter, runTransaction, Timestamp
 } from "firebase/firestore";
 import { todayKey } from "../utils/date";
+import { studentRecordEvent, studentRecordEventRef } from "./studentRecordEvents";
+import { academicTaskDocId } from "../utils/academicTaskIdentity";
+import { canUseAcademic, canViewStudent, getAllowedGradeLevels, isSchoolwide } from "../utils/access";
 
 // ------------------------------
 // Helpers
 // ------------------------------
-const ACTIVE_STATES = new Set(["not_started", "in_progress"]);
+const ACTIVE_STATES = new Set(["not_started", "needs_to_finish", "in_progress"]);
 const TERMINAL_STATES = new Set(["completed", "canceled"]);
 
 /**
@@ -63,8 +66,11 @@ export async function archiveCompletedTask(taskId, completedBy) {
     studentId,
     subject: t.subject || "ELA",
     title: t.title || "Untitled Task",
+    notes: t.notes || "",
+    teacher: t.teacher || "",
     // Preserve some provenance
     assignedBy: t.assignedBy || null,
+    assignedAt: t.assignedAt || null,
     createdAt: t.createdAt || null,
     // Completion metadata
     completedAt: serverTimestamp(),
@@ -88,6 +94,16 @@ export async function archiveCompletedTask(taskId, completedBy) {
     completedBy: completedBy || null,
     lastUpdated: serverTimestamp()
   });
+  batch.set(studentRecordEventRef(), studentRecordEvent({
+    studentId,
+    domain: "academic",
+    eventType: "taskCompleted",
+    actor: { uid: completedBy },
+    summary: `Completed academic assignment: ${t.title || "Untitled Task"}`,
+    sourceCollection: "tasks",
+    sourceId: taskId,
+    details: { previousState: t.state || "not_started", nextState: "completed" }
+  }));
 
   // 4) Commit the batch. If this throws, nothing was written.
   await batch.commit();
@@ -113,23 +129,52 @@ export async function listAttendanceByStudent(sid, { pageSize = 10, cursor = nul
 
 // Completed tasks history under students/{sid}/academicHistory
 export async function listCompletedTasksByStudent(sid, { pageSize = 10, cursor = null } = {}) {
-  let q = query(
-    collection(db, "students", sid, "academicHistory"),
-    orderBy("completedAt", "desc"),
-    limit(pageSize)
-  );
-  if (cursor) q = query(q, startAfter(cursor));
+  const [historyResult, tasksResult] = await Promise.allSettled([
+    getDocs(collection(db, "students", sid, "academicHistory")),
+    getDocs(query(collection(db, "tasks"), where("studentId", "==", sid)))
+  ]);
 
-  const snap = await getDocs(q);
+  if (historyResult.status === "rejected" && tasksResult.status === "rejected") {
+    throw historyResult.reason;
+  }
+
+  const records = new Map();
+  if (tasksResult.status === "fulfilled") {
+    tasksResult.value.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(task => task.state === "completed" || task.state === "verified" || task.archived === true)
+      .forEach(task => records.set(task.id, { ...task, taskId: task.id }));
+  }
+  if (historyResult.status === "fulfilled") {
+    historyResult.value.docs.forEach(d => {
+      const history = { id: d.id, ...d.data() };
+      const key = history.taskId || history.id;
+      records.set(key, { ...(records.get(key) || {}), ...history, id: key });
+    });
+  }
+
+  const toMillis = value => {
+    if (value?.toMillis) return value.toMillis();
+    if (value?.toDate) return value.toDate().getTime();
+    if (typeof value?.seconds === "number") return value.seconds * 1000;
+    const parsed = value ? new Date(value).getTime() : 0;
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  const allItems = [...records.values()].sort(
+    (a, b) => toMillis(b.completedAt) - toMillis(a.completedAt)
+  );
+  const offset = Number.isInteger(cursor) ? cursor : 0;
+  const items = allItems.slice(offset, offset + pageSize);
+  const nextOffset = offset + items.length;
   return {
-    items: snap.docs.map(d => ({ id: d.id, ...d.data() })),
-    cursor: snap.docs.at(-1) || null,
-    done: snap.empty || snap.size < pageSize
+    items,
+    cursor: nextOffset < allItems.length ? nextOffset : null,
+    done: nextOffset >= allItems.length
   };
 }
 
 // Cancel all active tasks for a student and remove them from today's deck
-export async function dismissStudentFromAR(studentId, todayKey) {
+export async function dismissStudentFromAR(studentId, todayKey, actor = {}) {
   const batch = writeBatch(db);
 
   // 1) cancel all active tasks for this student
@@ -140,6 +185,16 @@ export async function dismissStudentFromAR(studentId, todayKey) {
   const snap = await getDocs(q);
   snap.forEach(d => {
     batch.update(d.ref, { active: false, state: "canceled" });
+    batch.set(studentRecordEventRef(), studentRecordEvent({
+      studentId,
+      domain: "academic",
+      eventType: "taskStatusChanged",
+      actor,
+      summary: `${d.data().title || "Academic assignment"}: canceled when student was removed`,
+      sourceCollection: "tasks",
+      sourceId: d.id,
+      details: { previousState: d.data().state || null, nextState: "canceled" }
+    }));
   });
 
   // 2) remove from today's deck (if present)
@@ -168,7 +223,7 @@ function normalizeStatus(s) {
   if (s === "verified") return "completed";      // legacy
   if (s === "turned_in") return "in_progress";    // legacy
   if (TERMINAL_STATES.has(s)) return s;
-  if (s === "not_started" || s === "in_progress") return s;
+  if (s === "not_started" || s === "needs_to_finish" || s === "in_progress") return s;
   return "not_started";
 }
 
@@ -180,15 +235,30 @@ function normalizeStatus(s) {
  * This only updates the state and lastUpdated timestamp.
  * We are NOT auto-archiving completed tasks here. That's a separate, explicit action.
  */
-export async function updateTaskState(taskId, newState) {
+export async function updateTaskState(taskId, newState, actor = {}) {
   if (!taskId) throw new Error("updateTaskState: missing taskId");
   if (!newState) throw new Error("updateTaskState: missing newState");
 
   const ref = doc(db, "tasks", taskId);
-  await updateDoc(ref, {
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("updateTaskState: task not found");
+  const task = snap.data();
+  const batch = writeBatch(db);
+  batch.update(ref, {
     state: newState,
     lastUpdated: serverTimestamp()
   });
+  batch.set(studentRecordEventRef(), studentRecordEvent({
+    studentId: task.studentId,
+    domain: "academic",
+    eventType: "taskStatusChanged",
+    actor,
+    summary: `${task.title || "Academic assignment"}: ${task.state || "not started"} to ${newState}`,
+    sourceCollection: "tasks",
+    sourceId: taskId,
+    details: { previousState: task.state || null, nextState: newState }
+  }));
+  await batch.commit();
 }
 
 // ------------------------------
@@ -284,13 +354,96 @@ export async function bulkImportStudents(rows) {
 // ------------------------------
 // Tasks
 // ------------------------------
-export async function addTask({ studentId, subject, title, assignedBy, teacher = "", notes = "" }) {
+export const MAX_TASK_BATCH_SIZE = 5;
+
+function chunkAcademicValues(values, size = 8) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size));
+  return chunks;
+}
+
+export function listenPendingAcademicStudentCount(profile, onCount, onError) {
+  if (!canUseAcademic(profile)) {
+    onCount(0);
+    return () => {};
+  }
+
+  const allowedGrades = getAllowedGradeLevels(profile);
+  if (!isSchoolwide(profile) && !allowedGrades.length) {
+    onCount(0);
+    return () => {};
+  }
+
+  if (isSchoolwide(profile)) {
+    return onSnapshot(
+      query(collection(db, "tasks"), where("active", "==", true)),
+      snapshot => onCount(new Set(snapshot.docs.map(taskDoc => taskDoc.data().studentId).filter(Boolean)).size),
+      onError
+    );
+  }
+
+  // The grade-scoped query returns the normal count quickly. A background
+  // reconciliation preserves older active tasks created before task grades
+  // became required; it may update the initial count once all legacy batches load.
+  let taskUnsubscribers = [];
+  const unsubscribeDirect = onSnapshot(
+    query(
+      collection(db, "tasks"),
+      where("active", "==", true),
+      where("grade", "in", allowedGrades.slice(0, 30))
+    ),
+    snapshot => onCount(new Set(snapshot.docs.map(taskDoc => taskDoc.data().studentId).filter(Boolean)).size),
+    () => {}
+  );
+  const unsubscribeStudents = onSnapshot(
+    query(collection(db, "students"), where("grade", "in", allowedGrades.slice(0, 30))),
+    snapshot => {
+      taskUnsubscribers.forEach(unsubscribe => unsubscribe());
+      const studentIds = snapshot.docs
+        .map(studentDoc => ({ id: studentDoc.id, ...studentDoc.data() }))
+        .filter(student => canViewStudent(profile, student))
+        .map(student => student.id);
+      if (!studentIds.length) {
+        onCount(0);
+        taskUnsubscribers = [];
+        return;
+      }
+      const chunks = chunkAcademicValues(studentIds);
+      const pendingByChunk = new Map();
+      const loadedChunks = new Set();
+      taskUnsubscribers = chunks.map((studentIdChunk, index) => onSnapshot(
+        query(collection(db, "tasks"), where("active", "==", true), where("studentId", "in", studentIdChunk)),
+        taskSnapshot => {
+          pendingByChunk.set(index, taskSnapshot.docs.map(taskDoc => taskDoc.data().studentId).filter(Boolean));
+          loadedChunks.add(index);
+          if (loadedChunks.size === chunks.length) {
+            onCount(new Set([...pendingByChunk.values()].flat()).size);
+          }
+        },
+        onError
+      ));
+    },
+    onError
+  );
+
+  return () => {
+    unsubscribeDirect();
+    unsubscribeStudents();
+    taskUnsubscribers.forEach(unsubscribe => unsubscribe());
+  };
+}
+
+export async function addTask({ studentId, subject, title, assignedBy, teacher = "", notes = "", grade = "" }) {
   const now = serverTimestamp();
-  return addDoc(collection(db, "tasks"), {
-    studentId, subject, title, assignedBy, teacher, notes,
+  const ref = doc(db, "tasks", await academicTaskDocId({ studentId, subject, title }));
+  const batch = writeBatch(db);
+  batch.set(ref, {
+    studentId, subject, title, assignedBy, teacher, notes, grade,
     state: "not_started", active: true,
     assignedAt: now, lastUpdated: now
   });
+  await batch.commit();
+  return ref;
 }
 
 export function listenActiveTasks(cb) {
@@ -310,19 +463,33 @@ export function listenActiveTasks(cb) {
 }
 
 // New: setTaskStatus (explicit) and small helpers
-export async function setTaskStatus(taskId, status) {
+export async function setTaskStatus(taskId, status, actor = {}) {
   const state = normalizeStatus(status);
-  await updateDoc(doc(db, "tasks", taskId), {
-    state,
-    active: !TERMINAL_STATES.has(state),
-    lastUpdated: serverTimestamp(),
-  });
+  const ref = doc(db, "tasks", taskId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Task not found");
+  const task = snap.data();
+  const batch = writeBatch(db);
+  batch.update(ref, { state, active: !TERMINAL_STATES.has(state), lastUpdated: serverTimestamp() });
+  batch.set(studentRecordEventRef(), studentRecordEvent({
+    studentId: task.studentId,
+    domain: "academic",
+    eventType: "taskStatusChanged",
+    actor,
+    summary: `${task.title || "Academic assignment"}: ${task.state || "not started"} to ${state}`,
+    sourceCollection: "tasks",
+    sourceId: taskId,
+    details: { previousState: task.state || null, nextState: state }
+  }));
+  await batch.commit();
+  return task;
 }
 
-export async function completeTask(taskId) { return setTaskStatus(taskId, "completed"); }
-export async function cancelTask(taskId, reason = "") {
-  await setTaskStatus(taskId, "canceled");
+export async function completeTask(taskId, actor = {}) { return setTaskStatus(taskId, "completed", actor); }
+export async function cancelTask(taskId, reason = "", actor = {}) {
+  const task = await setTaskStatus(taskId, "canceled", actor);
   await addDoc(collection(db, "lifecycle"), {
+    studentId: task.studentId,
     taskId,
     eventType: "taskCanceled",
     reason: reason || null,
@@ -355,34 +522,104 @@ export async function addMinutes(studentId, minutes, uid, note = "") {
 }
 
 // New: markServedToday — idempotent per student per day
-export async function markServedToday(studentId, byUid, room = "") {
+export async function markServedToday(studentId, byUid, room = "", byName = "") {
   const date = todayKey();
   const attId = `${studentId}_${date}`; // deterministic id to prevent duplicates
   const ref = doc(db, "attendance", attId);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    // already marked today; lightly update recorder/room if provided
-    await updateDoc(ref, {
-      by: byUid || snap.data().by || null,
-      room: room || snap.data().room || null,
-      updatedAt: serverTimestamp(),
-    });
-    return attId;
-  }
-  await setDoc(ref, {
+  const batch = writeBatch(db);
+  const attendance = {
     studentId,
     date,          // YYYY-MM-DD
-    room: room || null,
     by: byUid || null,
-    createdAt: serverTimestamp(),
+    byName: byName || null,
     updatedAt: serverTimestamp(),
-  });
-  await addDoc(collection(db, "lifecycle"), {
+  };
+  if (room) attendance.room = room;
+  batch.set(ref, attendance, { merge: true });
+  batch.set(doc(collection(db, "lifecycle")), {
     studentId,
     eventType: "servedDayLogged",
     date,
     by: byUid || null,
+    byName: byName || null,
     at: serverTimestamp(),
+  });
+  batch.set(studentRecordEventRef(), studentRecordEvent({
+    studentId,
+    domain: "academic",
+    eventType: "attendanceMarked",
+    actor: { uid: byUid, name: byName },
+    summary: "Marked present for academic reteach",
+    sourceCollection: "attendance",
+    sourceId: attId,
+    details: { date, room: room || null }
+  }));
+  await batch.commit();
+  return attId;
+}
+
+export async function recordTodayAcademicAttendance(studentId, staff = {}, laneId, { room = "" } = {}) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  const attId = `${studentId}_${date}`;
+  const attendanceRef = doc(db, "attendance", attId);
+  const sessionRef = doc(db, "academicSessions", academicLaneDocId(lane.id, date));
+
+  await runTransaction(db, async transaction => {
+    const sessionSnap = await transaction.get(sessionRef);
+    const attendance = {
+      studentId,
+      date,
+      grade: lane.grade,
+      laneId: lane.id,
+      by: staff.uid || null,
+      byName: staff.name || null,
+      updatedAt: serverTimestamp()
+    };
+    if (room) attendance.room = room;
+    transaction.set(attendanceRef, attendance, { merge: true });
+    transaction.set(doc(collection(db, "lifecycle")), {
+      studentId,
+      eventType: "servedDayLogged",
+      date,
+      grade: lane.grade,
+      laneId: lane.id,
+      by: staff.uid || null,
+      byName: staff.name || null,
+      at: serverTimestamp()
+    });
+    transaction.set(studentRecordEventRef(), studentRecordEvent({
+      studentId,
+      domain: "academic",
+      eventType: "attendanceMarked",
+      actor: staff,
+      summary: "Marked present for academic reteach",
+      sourceCollection: "attendance",
+      sourceId: attId,
+      details: { date, room: room || null, laneId: lane.id }
+    }));
+
+    if (sessionSnap.exists()) {
+      const session = sessionSnap.data();
+      const outcomes = { ...(session.outcomes || {}) };
+      outcomes[studentId] = {
+        status: "present",
+        updatedByUid: staff.uid || null,
+        updatedByName: staff.name || null,
+        updatedAt: Timestamp.now()
+      };
+      transaction.update(sessionRef, { outcomes, lastUpdated: serverTimestamp() });
+      transaction.set(studentRecordEventRef(), studentRecordEvent({
+        studentId,
+        domain: "academic",
+        eventType: "sessionOutcomeRecorded",
+        actor: staff,
+        summary: "Academic session outcome recorded: present",
+        sourceCollection: "academicSessions",
+        sourceId: sessionRef.id,
+        details: { status: "present", laneId: lane.id, date: session.date || date }
+      }));
+    }
   });
   return attId;
 }
@@ -499,44 +736,414 @@ export async function updateStudentRecord(studentId, updates) {
   });
 }
 
-export async function unmarkServedToday(studentId, byUid = "") {
+export async function addTasks({ studentIds, subject, title, assignedBy, teacher = "", notes = "", grade = "" }) {
+  const uniqueStudentIds = [...new Set((studentIds || []).map(id => String(id || "").trim()).filter(Boolean))];
+  if (uniqueStudentIds.length === 0) throw new Error("At least one student is required");
+  if (uniqueStudentIds.length > MAX_TASK_BATCH_SIZE) {
+    throw new Error(`No more than ${MAX_TASK_BATCH_SIZE} students can be assigned at once`);
+  }
+
+  const refs = await Promise.all(uniqueStudentIds.map(async studentId =>
+    doc(db, "tasks", await academicTaskDocId({ studentId, subject, title }))
+  ));
+  const batch = writeBatch(db);
+  const now = serverTimestamp();
+  refs.forEach((ref, index) => {
+    const studentId = uniqueStudentIds[index];
+    batch.set(ref, {
+      studentId, subject, title, assignedBy, teacher, notes, grade,
+      state: "not_started", active: true,
+      assignedAt: now, lastUpdated: now
+    });
+  });
+  await batch.commit();
+  return refs;
+}
+
+export async function unmarkServedToday(studentId, byUid = "", byName = "") {
   const date = todayKey();
   const attId = `${studentId}_${date}`;
-  await deleteDoc(doc(db, "attendance", attId));
-  await addDoc(collection(db, "lifecycle"), {
+  const attendanceRef = doc(db, "attendance", attId);
+  const attendanceSnap = await getDoc(attendanceRef);
+  const prior = attendanceSnap.exists() ? attendanceSnap.data() : {};
+  const batch = writeBatch(db);
+  batch.delete(attendanceRef);
+  batch.set(doc(collection(db, "lifecycle")), {
     studentId,
     eventType: "servedDayUnlogged",
     date,
     by: byUid || null,
+    byName: byName || null,
     at: serverTimestamp()
+  });
+  batch.set(studentRecordEventRef(), studentRecordEvent({
+    studentId,
+    domain: "academic",
+    eventType: "attendanceUnmarked",
+    actor: { uid: byUid, name: byName },
+    summary: "Removed academic attendance mark",
+    sourceCollection: "attendance",
+    sourceId: attId,
+    details: { date, priorRoom: prior.room || null, priorRecordedByUid: prior.by || null }
+  }));
+  await batch.commit();
+}
+
+export async function undoTodayAcademicAttendance(studentIds, staff = {}, laneId) {
+  const ids = [...new Set((studentIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  const date = todayKey();
+  const sessionRef = doc(db, "academicSessions", academicLaneDocId(laneId, date));
+  const attendanceRefs = ids.map(studentId => doc(db, "attendance", `${studentId}_${date}`));
+
+  await runTransaction(db, async transaction => {
+    const [sessionSnap, ...attendanceSnaps] = await Promise.all([
+      transaction.get(sessionRef),
+      ...attendanceRefs.map(ref => transaction.get(ref))
+    ]);
+    const outcomes = { ...(sessionSnap.exists() ? sessionSnap.data().outcomes || {} : {}) };
+
+    ids.forEach((studentId, index) => {
+      const prior = attendanceSnaps[index].exists() ? attendanceSnaps[index].data() : {};
+      transaction.delete(attendanceRefs[index]);
+      outcomes[studentId] = {
+        status: "selected",
+        updatedByUid: staff.uid || null,
+        updatedByName: staff.name || null,
+        updatedAt: Timestamp.now()
+      };
+      transaction.set(doc(collection(db, "lifecycle")), {
+        studentId,
+        eventType: "servedDayUnlogged",
+        date,
+        by: staff.uid || null,
+        byName: staff.name || null,
+        at: serverTimestamp()
+      });
+      transaction.set(studentRecordEventRef(), studentRecordEvent({
+        studentId,
+        domain: "academic",
+        eventType: "attendanceUnmarked",
+        actor: staff,
+        summary: "Removed academic attendance mark",
+        sourceCollection: "attendance",
+        sourceId: `${studentId}_${date}`,
+        details: { date, priorRoom: prior.room || null, priorRecordedByUid: prior.by || null }
+      }));
+      transaction.set(studentRecordEventRef(), studentRecordEvent({
+        studentId,
+        domain: "academic",
+        eventType: "sessionOutcomeRecorded",
+        actor: staff,
+        summary: "Academic session outcome recorded: selected",
+        sourceCollection: "academicSessions",
+        sourceId: sessionRef.id,
+        details: { status: "selected", laneId, date }
+      }));
+    });
+
+    if (sessionSnap.exists()) {
+      transaction.update(sessionRef, { outcomes, lastUpdated: serverTimestamp() });
+    }
   });
 }
 
 // ------------------------------
-// Deck (date-scoped)
+// Academic session lanes
 // ------------------------------
-export async function ensureTodayDeck(ownerUid) {
-  const ref = doc(db, "deck", `${todayKey()}_${ownerUid}`);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    await setDoc(ref, {
-      items: [],
-      createdBy: ownerUid,
-      createdAt: serverTimestamp(),
+export const ACADEMIC_SESSION_LANES = Object.freeze([
+  { id: "6-north", label: "Grade 6 North", grade: "6" },
+  { id: "6-south", label: "Grade 6 South", grade: "6" },
+  { id: "7", label: "Grade 7", grade: "7" },
+  { id: "8", label: "Grade 8", grade: "8" }
+]);
+
+export function academicLaneDocId(laneId, date = todayKey()) {
+  return `${date}_${laneId}`;
+}
+
+function getAcademicLane(laneId) {
+  const lane = ACADEMIC_SESSION_LANES.find(item => item.id === laneId);
+  if (!lane) throw new Error(`Unknown Academic session lane: ${laneId}`);
+  return lane;
+}
+
+function laneFields(lane, date) {
+  return { date, laneId: lane.id, laneLabel: lane.label, grade: lane.grade };
+}
+
+async function readTodayLaneStates(transaction, date, grade) {
+  const refs = ACADEMIC_SESSION_LANES.filter(lane => lane.grade === grade).map(lane => ({
+    lane,
+    deckRef: doc(db, "deck", academicLaneDocId(lane.id, date)),
+    sessionRef: doc(db, "academicSessions", academicLaneDocId(lane.id, date))
+  }));
+  const snapshots = await Promise.all(refs.flatMap(({ deckRef, sessionRef }) => [
+    transaction.get(deckRef),
+    transaction.get(sessionRef)
+  ]));
+  return refs.map((refsForLane, index) => {
+    const deckSnap = snapshots[index * 2];
+    const sessionSnap = snapshots[(index * 2) + 1];
+    return {
+      ...refsForLane,
+      deckSnap,
+      sessionSnap,
+      deck: deckSnap.exists() ? deckSnap.data() : {},
+      session: sessionSnap.exists() ? sessionSnap.data() : {}
+    };
+  });
+}
+
+function findStudentLaneConflict(states, studentId, targetLaneId) {
+  return states.find(state => state.lane.id !== targetLaneId && (
+    (state.deck.items || []).includes(studentId)
+    || (state.session.status === "live" && (state.session.activeRoster || []).includes(studentId))
+  ));
+}
+
+function throwLaneConflict(conflict, studentId) {
+  const error = new Error(`Student is already in ${conflict.lane.label}.`);
+  error.code = "academic/student-in-other-lane";
+  error.studentId = studentId;
+  error.laneId = conflict.lane.id;
+  error.laneLabel = conflict.lane.label;
+  throw error;
+}
+
+function removeStudentsFromLane(transaction, state, studentIds, staff = {}) {
+  const ids = new Set(studentIds);
+  if ((state.deck.items || []).some(studentId => ids.has(studentId))) {
+    transaction.set(state.deckRef, {
+      items: (state.deck.items || []).filter(id => !ids.has(id)),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  }
+  if (state.sessionSnap.exists() && (state.session.activeRoster || []).some(studentId => ids.has(studentId))) {
+    const outcomes = { ...(state.session.outcomes || {}) };
+    studentIds.forEach(studentId => {
+      outcomes[studentId] = {
+        status: "removed",
+        updatedByUid: staff.uid || null,
+        updatedByName: staff.name || null,
+        updatedAt: Timestamp.now()
+      };
+    });
+    transaction.update(state.sessionRef, {
+      activeRoster: (state.session.activeRoster || []).filter(id => !ids.has(id)),
+      outcomes,
       lastUpdated: serverTimestamp()
     });
   }
+}
+
+function removeStudentFromLane(transaction, state, studentId, staff = {}) {
+  removeStudentsFromLane(transaction, state, [studentId], staff);
+}
+
+// ------------------------------
+// Deck (date + lane scoped)
+// ------------------------------
+export async function ensureTodayDeck(ownerUid, laneId) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  const ref = doc(db, "deck", academicLaneDocId(lane.id, date));
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if (snap.exists()) return;
+    transaction.set(ref, {
+      items: [],
+      createdBy: ownerUid || null,
+      ...laneFields(lane, date),
+      createdAt: serverTimestamp(),
+      lastUpdated: serverTimestamp()
+    });
+  });
   return ref;
 }
 
-export async function addToDeck(studentId, ownerUid) {
-  const ref = doc(db, "deck", `${todayKey()}_${ownerUid}`);
-  await updateDoc(ref, { items: arrayUnion(studentId), lastUpdated: serverTimestamp() });
+export async function addToDeck(studentId, ownerUid, laneId, { move = false, staff = {} } = {}) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  await runTransaction(db, async transaction => {
+    const states = await readTodayLaneStates(transaction, date, lane.grade);
+    const target = states.find(state => state.lane.id === lane.id);
+    const conflict = findStudentLaneConflict(states, studentId, lane.id);
+    if (conflict && !move) throwLaneConflict(conflict, studentId);
+    if (conflict) removeStudentFromLane(transaction, conflict, studentId, staff);
+    transaction.set(target.deckRef, {
+      items: [...new Set([...(target.deck.items || []), studentId])],
+      createdBy: target.deck.createdBy || ownerUid || null,
+      ...laneFields(lane, date),
+      createdAt: target.deck.createdAt || serverTimestamp(),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  });
 }
 
-export async function removeFromDeck(studentId, ownerUid) {
-  const ref = doc(db, "deck", `${todayKey()}_${ownerUid}`);
+export async function removeFromDeck(studentId, ownerUid, laneId) {
+  const ref = await ensureTodayDeck(ownerUid, laneId);
   await updateDoc(ref, { items: arrayRemove(studentId), lastUpdated: serverTimestamp() });
+}
+
+// ------------------------------
+// One shared Academic session per lane, per school day
+// ------------------------------
+export function listenTodayAcademicSession(laneId, cb, onError) {
+  return onSnapshot(doc(db, "academicSessions", academicLaneDocId(laneId)), snap => {
+    cb(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+  }, onError);
+}
+
+export async function startTodayAcademicSession({ hostUid, hostName, roster = [], laneId, moveConflicts = false }) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  await runTransaction(db, async transaction => {
+    const states = await readTodayLaneStates(transaction, date, lane.grade);
+    const target = states.find(state => state.lane.id === lane.id);
+    const conflicts = roster.map(studentId => ({
+      studentId,
+      state: findStudentLaneConflict(states, studentId, lane.id)
+    })).filter(item => item.state);
+    if (conflicts.length && !moveConflicts) throwLaneConflict(conflicts[0].state, conflicts[0].studentId);
+    states.forEach(state => {
+      const studentIds = conflicts.filter(conflict => conflict.state.lane.id === state.lane.id).map(conflict => conflict.studentId);
+      if (studentIds.length) removeStudentsFromLane(transaction, state, studentIds, { uid: hostUid, name: hostName });
+    });
+    const current = target.session;
+    const fullRoster = [...new Set([...(current.roster || []), ...roster])];
+    const outcomes = { ...(current.outcomes || {}) };
+    roster.forEach(studentId => {
+      outcomes[studentId] = { status: "selected", updatedByUid: hostUid || null, updatedByName: hostName || null, updatedAt: Timestamp.now() };
+    });
+    transaction.set(target.sessionRef, {
+      ...laneFields(lane, date),
+      status: "live",
+      hostUid: hostUid || null,
+      hostName: hostName || null,
+      startedAt: serverTimestamp(),
+      endedAt: null,
+      endedByUid: null,
+      endedByName: null,
+      roster: fullRoster,
+      activeRoster: [...roster],
+      outcomes,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  });
+}
+
+export async function addStudentToTodayAcademicSession(studentId, staff = {}, laneId, { move = false } = {}) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  await runTransaction(db, async transaction => {
+    const states = await readTodayLaneStates(transaction, date, lane.grade);
+    const target = states.find(state => state.lane.id === lane.id);
+    const conflict = findStudentLaneConflict(states, studentId, lane.id);
+    if (conflict && !move) throwLaneConflict(conflict, studentId);
+    if (conflict) removeStudentFromLane(transaction, conflict, studentId, staff);
+    const outcomes = { ...(target.session.outcomes || {}) };
+    outcomes[studentId] = {
+      status: "selected",
+      updatedByUid: staff.uid || null,
+      updatedByName: staff.name || null,
+      updatedAt: Timestamp.now()
+    };
+    transaction.set(target.deckRef, {
+      items: [...new Set([...(target.deck.items || []), studentId])],
+      createdBy: target.deck.createdBy || staff.uid || null,
+      ...laneFields(lane, date),
+      createdAt: target.deck.createdAt || serverTimestamp(),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+    transaction.set(target.sessionRef, {
+      ...laneFields(lane, date),
+      roster: [...new Set([...(target.session.roster || []), studentId])],
+      activeRoster: [...new Set([...(target.session.activeRoster || []), studentId])],
+      outcomes,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  });
+}
+
+export async function recordTodayAcademicSessionOutcome(studentId, status, staff = {}, laneId) {
+  const sessionRef = doc(db, "academicSessions", academicLaneDocId(laneId));
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(sessionRef);
+    if (!snap.exists()) return;
+    const session = snap.data();
+    const outcomes = { ...(session.outcomes || {}) };
+    outcomes[studentId] = {
+      status,
+      updatedByUid: staff.uid || null,
+      updatedByName: staff.name || null,
+      updatedAt: Timestamp.now()
+    };
+    transaction.update(sessionRef, { outcomes, lastUpdated: serverTimestamp() });
+    transaction.set(studentRecordEventRef(), studentRecordEvent({
+      studentId,
+      domain: "academic",
+      eventType: "sessionOutcomeRecorded",
+      actor: staff,
+      summary: `Academic session outcome recorded: ${status}`,
+      sourceCollection: "academicSessions",
+      sourceId: sessionRef.id,
+      details: { status, laneId, date: session.date || todayKey() }
+    }));
+  });
+}
+
+export async function removeStudentFromTodayAcademicSession(studentId, staff = {}, laneId) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  const sessionRef = doc(db, "academicSessions", academicLaneDocId(lane.id, date));
+  const deckRef = doc(db, "deck", academicLaneDocId(lane.id, date));
+  await runTransaction(db, async transaction => {
+    const [sessionSnap, deckSnap] = await Promise.all([transaction.get(sessionRef), transaction.get(deckRef)]);
+    const session = sessionSnap.exists() ? sessionSnap.data() : {};
+    const deck = deckSnap.exists() ? deckSnap.data() : {};
+    const outcomes = { ...(session.outcomes || {}) };
+    outcomes[studentId] = {
+      status: "removed",
+      updatedByUid: staff.uid || null,
+      updatedByName: staff.name || null,
+      updatedAt: Timestamp.now()
+    };
+    transaction.set(deckRef, { items: (deck.items || []).filter(id => id !== studentId), lastUpdated: serverTimestamp() }, { merge: true });
+    if (sessionSnap.exists()) transaction.update(sessionRef, {
+      activeRoster: (session.activeRoster || []).filter(id => id !== studentId), outcomes, lastUpdated: serverTimestamp()
+    });
+    transaction.set(studentRecordEventRef(), studentRecordEvent({
+      studentId,
+      domain: "academic",
+      eventType: "sessionOutcomeRecorded",
+      actor: staff,
+      summary: "Removed from academic session",
+      sourceCollection: "academicSessions",
+      sourceId: sessionRef.id,
+      details: { status: "removed", laneId: lane.id, date }
+    }));
+  });
+}
+
+export async function endTodayAcademicSession({ staff = {}, unmarkedStudentIds = [], laneId } = {}) {
+  const date = todayKey();
+  const lane = getAcademicLane(laneId);
+  const sessionRef = doc(db, "academicSessions", academicLaneDocId(lane.id, date));
+  const deckRef = doc(db, "deck", academicLaneDocId(lane.id, date));
+  await runTransaction(db, async transaction => {
+    const [sessionSnap, deckSnap] = await Promise.all([transaction.get(sessionRef), transaction.get(deckRef)]);
+    const session = sessionSnap.exists() ? sessionSnap.data() : {};
+    const outcomes = { ...(session.outcomes || {}) };
+    unmarkedStudentIds.forEach(studentId => {
+      outcomes[studentId] = { status: "no_show", updatedByUid: staff.uid || null, updatedByName: staff.name || null, updatedAt: Timestamp.now() };
+    });
+    if (sessionSnap.exists()) transaction.update(sessionRef, {
+      status: "ended", activeRoster: [], outcomes, endedAt: serverTimestamp(),
+      endedByUid: staff.uid || null, endedByName: staff.name || null, lastUpdated: serverTimestamp()
+    });
+    if (deckSnap.exists()) transaction.update(deckRef, { items: [], lastUpdated: serverTimestamp() });
+  });
 }
 
 // ------------------------------

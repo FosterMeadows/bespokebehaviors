@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { collection, addDoc, Timestamp } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { db } from "../firebaseConfig";
 import { AuthContext } from "../AuthContext.jsx";
 import { useReports } from "../hooks/useReports.jsx";

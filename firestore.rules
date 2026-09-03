@@ -55,6 +55,83 @@ service cloud.firestore {
       return isSchoolwide() || hasRole("behavior") || hasFeature("behavior");
     }
 
+    function canOverrideBehaviorThreshold() {
+      return hasAnyRole(["admin", "owner"]);
+    }
+
+    function canCancelBehaviorRecord(record) {
+      return canUseBehavior() && record.status == "pending"
+        && (canOverrideBehaviorThreshold() || record.assignedByUid == request.auth.uid);
+    }
+
+    function validCancellation(before, after) {
+      return after.get('status', '') == "cancelled" && before.get('status', '') == "pending"
+        && after.diff(before).affectedKeys().hasOnly([
+          "status", "cancelledAt", "cancelledByUid", "cancelledByName", "cancellationReason", "cancellationNote"
+        ])
+        && after.cancelledAt == request.time
+        && after.cancelledByUid == request.auth.uid
+        && after.cancelledByName is string && after.cancelledByName.size() > 0
+        && after.cancellationReason in ["Elevated to Referral", "Assigned in Error", "Duplicate", "Other"]
+        && after.cancellationNote is string && after.cancellationNote.size() <= 500
+        && (after.cancellationReason != "Other" || after.cancellationNote.matches('(?s).*[^\\s].*'))
+        && canCancelBehaviorRecord(before);
+    }
+
+    function cancellationContactIsSynced(recordId) {
+      let path = /databases/$(database)/documents/behaviorHomeContactRequirements/$(recordId);
+      return !exists(path) || get(path).data.status != "pending"
+        || getAfter(path).data.status == "cancelled";
+    }
+
+    function cancellationMilestoneIsSynced(recordId, record) {
+      let path = /databases/$(database)/documents/behaviorHomeContactMilestones/$(record.studentId + '_' + record.get('schoolYear', 'legacy'));
+      return !exists(path) || (
+        getAfter(path).data.lastCancelledReteachId == recordId
+        && getAfter(path).data.assignmentCount == (get(path).data.assignmentCount > 0 ? get(path).data.assignmentCount - 1 : 0)
+      );
+    }
+
+    function milestoneCancellationIsValid() {
+      let id = request.resource.data.lastCancelledReteachId;
+      let path = /databases/$(database)/documents/behaviorReteaches/$(id);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      let contactPath = /databases/$(database)/documents/behaviorHomeContactRequirements/$(id);
+      let reset = resource.data.get('triggeringReteachId', '') == id
+        && exists(contactPath) && get(contactPath).data.status == "pending";
+      return validCancellation(before, after)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "assignmentCount", "lastCancelledReteachId", "updatedAt", "thirdReteachReached", "triggeringReteachId", "reachedAt"
+        ])
+        && resource.data.studentId == before.studentId
+        && resource.data.schoolYear == before.get('schoolYear', resource.data.schoolYear)
+        && request.resource.data.assignmentCount == (resource.data.assignmentCount > 0 ? resource.data.assignmentCount - 1 : 0)
+        && request.resource.data.updatedAt == request.time
+        && (reset
+          ? (request.resource.data.thirdReteachReached == false
+            && request.resource.data.triggeringReteachId == null && request.resource.data.reachedAt == null)
+          : (request.resource.data.thirdReteachReached == resource.data.thirdReteachReached
+            && request.resource.data.get('triggeringReteachId', null) == resource.data.get('triggeringReteachId', null)
+            && request.resource.data.get('reachedAt', null) == resource.data.get('reachedAt', null)));
+    }
+
+    function contactCancellationIsValid(recordId) {
+      let path = /databases/$(database)/documents/behaviorReteaches/$(recordId);
+      let record = getAfter(path).data;
+      return validCancellation(get(path).data, record)
+        && resource.data.status == "pending"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "cancelledAt", "cancelledByUid", "cancelledByName", "cancellationReason", "cancellationNote"
+        ])
+        && request.resource.data.status == "cancelled"
+        && request.resource.data.cancelledAt == record.cancelledAt
+        && request.resource.data.cancelledByUid == record.cancelledByUid
+        && request.resource.data.cancelledByName == record.cancelledByName
+        && request.resource.data.cancellationReason == record.cancellationReason
+        && request.resource.data.cancellationNote == record.cancellationNote;
+    }
+
     function canUseStudentRecords() {
       return canUseAcademic() || canUseBehavior();
     }
@@ -66,11 +143,151 @@ service cloud.firestore {
           && profile().gradeLevels.hasAny([grade]));
     }
 
+    function hasAssignedGradeAccess(grade) {
+      return hasTeacherProfile()
+        && profile().keys().hasAny(["gradeLevels"])
+        && profile().gradeLevels.hasAny([grade]);
+    }
+
+    function academicLanePathMatchesGrade(documentId, grade) {
+      return (grade == "6" && (documentId.matches(".*_6-north") || documentId.matches(".*_6-south")))
+        || (grade == "7" && documentId.matches(".*_7"))
+        || (grade == "8" && documentId.matches(".*_8"));
+    }
+
+    function validAcademicLaneDocument(documentId, data) {
+      return data.keys().hasAll(["laneId", "grade"])
+        && academicLanePathMatchesGrade(documentId, data.grade)
+        && ((data.laneId == "6-north" && data.grade == "6")
+          || (data.laneId == "6-south" && data.grade == "6")
+          || (data.laneId == "7" && data.grade == "7")
+          || (data.laneId == "8" && data.grade == "8"));
+    }
+
+    function canAccessAcademicLanePath(documentId) {
+      return isSchoolwide()
+        || (hasAssignedGradeAccess("6") && academicLanePathMatchesGrade(documentId, "6"))
+        || (hasAssignedGradeAccess("7") && academicLanePathMatchesGrade(documentId, "7"))
+        || (hasAssignedGradeAccess("8") && academicLanePathMatchesGrade(documentId, "8"));
+    }
+
     function canAccessStudent(studentId) {
       return isSchoolwide()
         || (studentId != null
           && exists(/databases/$(database)/documents/students/$(studentId))
           && hasGradeAccess(get(/databases/$(database)/documents/students/$(studentId)).data.grade));
+    }
+
+    function canAccessBehaviorStudent(studentId) {
+      return isSchoolwide()
+        || (studentId != null
+          && exists(/databases/$(database)/documents/students/$(studentId))
+          && hasAssignedGradeAccess(get(/databases/$(database)/documents/students/$(studentId)).data.grade));
+    }
+
+    function behaviorSummaryMatchesRecord(recordId) {
+      let record = getAfter(/databases/$(database)/documents/behaviorReteaches/$(recordId)).data;
+      return request.resource.data.keys().hasOnly([
+          "studentId",
+          "studentName",
+          "grade",
+          "homeroom",
+          "assignedByUid",
+          "assignedByName",
+          "reteachDate",
+          "location",
+          "context",
+          "postThreshold",
+          "status",
+          "createdAt",
+          "servedAt",
+          "servedByUid",
+          "servedByName",
+          "servedPostThreshold"
+        ])
+        && request.resource.data.studentId == record.studentId
+        && request.resource.data.studentName == record.studentName
+        && request.resource.data.grade == record.grade
+        && request.resource.data.homeroom == record.homeroom
+        && request.resource.data.assignedByUid == record.assignedByUid
+        && request.resource.data.assignedByName == record.assignedByName
+        && request.resource.data.reteachDate == record.reteachDate
+        && request.resource.data.location == record.location
+        && request.resource.data.context == record.context
+        && ((!record.keys().hasAny(["postThreshold"])
+            && request.resource.data.postThreshold == false)
+          || request.resource.data.postThreshold == record.postThreshold)
+        && request.resource.data.status == record.status
+        && request.resource.data.createdAt == record.createdAt
+        && request.resource.data.servedAt == record.servedAt
+        && request.resource.data.servedByUid == record.servedByUid
+        && request.resource.data.servedByName == record.servedByName
+        && ((!record.keys().hasAny(["servedPostThreshold"])
+            && request.resource.data.servedPostThreshold == false)
+          || request.resource.data.servedPostThreshold == record.servedPostThreshold);
+    }
+
+    function behaviorMilestoneMatchesRecord() {
+      let record = getAfter(/databases/$(database)/documents/behaviorReteaches/$(request.resource.data.lastReteachId)).data;
+      return request.resource.data.keys().hasOnly([
+          "studentId",
+          "schoolYear",
+          "assignmentCount",
+          "thirdReteachReached",
+          "lastReteachId",
+          "createdAt",
+          "updatedAt",
+          "grandfathered",
+          "reachedAt",
+          "triggeringReteachId",
+          "lastCancelledReteachId"
+        ])
+        && request.resource.data.studentId == record.studentId
+        && request.resource.data.schoolYear == record.schoolYear
+        && record.assignedByUid == request.auth.uid
+        && request.resource.data.assignmentCount is int
+        && request.resource.data.assignmentCount > 0;
+    }
+
+    function homeContactRequirementMatchesRecord(recordId) {
+      let record = getAfter(/databases/$(database)/documents/behaviorReteaches/$(recordId)).data;
+      return request.resource.data.keys().hasOnly([
+          "reteachId",
+          "studentId",
+          "studentName",
+          "grade",
+          "homeroom",
+          "assignedByUid",
+          "assignedByName",
+          "reteachDate",
+          "schoolYear",
+          "status",
+          "requiredAt",
+          "contactedParty",
+          "method",
+          "attemptDate",
+          "successful",
+          "note",
+          "recordedByUid",
+          "recordedByName",
+          "recordedAt",
+          "completedAt"
+        ])
+        && record.homeContactRequired == true
+        && request.resource.data.reteachId == recordId
+        && request.resource.data.studentId == record.studentId
+        && request.resource.data.studentName == record.studentName
+        && request.resource.data.grade == record.grade
+        && request.resource.data.homeroom == record.homeroom
+        && request.resource.data.assignedByUid == record.assignedByUid
+        && request.resource.data.assignedByName == record.assignedByName
+        && request.resource.data.reteachDate == record.reteachDate
+        && request.resource.data.schoolYear == record.schoolYear
+        && request.resource.data.status == "pending"
+        && request.resource.data.contactedParty == ""
+        && request.resource.data.method == ""
+        && request.resource.data.attemptDate == ""
+        && request.resource.data.successful == null;
     }
 
     function isSelf(uid) {
@@ -87,7 +304,7 @@ service cloud.firestore {
             "displayName",
             "contactEmail"
           ]));
-      allow update: if isOwner()
+      allow update: if (isOwner() && !isSelf(teacherId))
         || (isSelf(teacherId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             "displayName",
@@ -102,13 +319,105 @@ service cloud.firestore {
         allow write: if isSchoolwide() || isSelf(teacherId);
       }
 
-      match /{subdocument=**} {
+      match /{subcollection}/{subdocument=**} {
         allow read, write: if isSchoolwide() || isSelf(teacherId);
       }
     }
 
+    match /teacherAccessEvents/{eventId} {
+      allow read: if isOwner();
+      allow create: if isOwner()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.targetUid is string
+        && request.resource.data.previousRoles is list
+        && request.resource.data.previousGradeLevels is list
+        && request.resource.data.nextRoles is list
+        && request.resource.data.nextGradeLevels is list;
+      allow update, delete: if false;
+    }
+
+    match /clientErrors/{errorId} {
+      allow read: if isSchoolwide();
+      allow create: if signedIn()
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          "reference", "userUid", "route", "source", "category",
+          "release", "online", "userAgent", "occurredAt"
+        ])
+        && request.resource.data.reference is string
+        && request.resource.data.reference.size() <= 20
+        && request.resource.data.route is string
+        && request.resource.data.route.size() <= 160
+        && request.resource.data.source is string
+        && request.resource.data.source.size() <= 80
+        && request.resource.data.category is string
+        && request.resource.data.category.size() <= 80;
+      allow update: if false;
+      allow delete: if isOwner();
+    }
+
+    match /supportReports/{reportId} {
+      allow read: if isSchoolwide();
+      allow create: if signedIn()
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          "reference", "reporterUid", "reporterName", "reporterEmail",
+          "issue", "attempted", "route", "release", "online", "userAgent",
+          "status", "createdAt", "resolvedAt", "resolvedByUid", "resolvedByName"
+        ])
+        && request.resource.data.reference is string
+        && request.resource.data.reference.size() <= 20
+        && request.resource.data.reporterName is string
+        && request.resource.data.reporterName.size() <= 160
+        && request.resource.data.reporterEmail is string
+        && request.resource.data.reporterEmail.size() <= 160
+        && request.resource.data.issue is string
+        && request.resource.data.issue.size() > 0
+        && request.resource.data.issue.size() <= 1200
+        && request.resource.data.attempted is string
+        && request.resource.data.attempted.size() <= 600
+        && request.resource.data.route is string
+        && request.resource.data.route.size() <= 160
+        && request.resource.data.release is string
+        && request.resource.data.release.size() <= 40
+        && request.resource.data.online is bool
+        && request.resource.data.userAgent is string
+        && request.resource.data.userAgent.size() <= 500
+        && request.resource.data.status == "open"
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.resolvedAt == null
+        && request.resource.data.resolvedByUid == null
+        && request.resource.data.resolvedByName == null;
+      allow update: if isSchoolwide()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "resolvedAt", "resolvedByUid", "resolvedByName"
+        ])
+        && request.resource.data.status in ["open", "resolved"]
+        && (
+          (request.resource.data.status == "open"
+            && request.resource.data.resolvedAt == null
+            && request.resource.data.resolvedByUid == null
+            && request.resource.data.resolvedByName == null)
+          || (request.resource.data.status == "resolved"
+            && request.resource.data.resolvedAt is timestamp
+            && request.resource.data.resolvedByUid == request.auth.uid
+            && request.resource.data.resolvedByName is string
+            && request.resource.data.resolvedByName.size() <= 160)
+        );
+      allow delete: if isOwner();
+    }
+
+    match /teacherCommandCenters/{ownerId} {
+      allow read, write: if isOwner() && isSelf(ownerId);
+
+      match /{document=**} {
+        allow read, write: if isOwner() && isSelf(ownerId);
+      }
+    }
+
     match /students/{studentId} {
-      allow read: if canUseStudentRecords() && hasGradeAccess(resource.data.grade);
+      allow read: if canUseBehavior()
+        || (canUseStudentRecords() && hasGradeAccess(resource.data.grade));
       allow write: if isSchoolwide();
 
       match /{subdocument=**} {
@@ -130,15 +439,131 @@ service cloud.firestore {
     }
 
     match /tasks/{taskId} {
-      allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
-      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
-      allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow get: if canUseAcademic() && canAccessStudent(resource.data.studentId);
+      allow list: if canUseAcademic() && (
+        isSchoolwide()
+        || (resource.data.keys().hasAll(["grade"]) && hasAssignedGradeAccess(resource.data.grade))
+        || canAccessStudent(resource.data.studentId)
+      );
+      allow create: if canUseAcademic()
+        && canAccessStudent(request.resource.data.studentId)
+        && request.resource.data.grade == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.grade;
+      allow update: if canUseAcademic()
+        && canAccessStudent(resource.data.studentId)
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.get("grade", "") == resource.data.get("grade", "");
+      allow delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
     }
 
     match /behaviorReteaches/{recordId} {
-      allow read: if canUseBehavior() && canAccessStudent(resource.data.studentId);
-      allow create: if canUseBehavior() && canAccessStudent(request.resource.data.studentId);
-      allow update, delete: if canUseBehavior() && canAccessStudent(resource.data.studentId);
+      allow read: if canUseBehavior() && (
+        canAccessBehaviorStudent(resource.data.studentId) || resource.data.assignedByUid == request.auth.uid
+      );
+      allow create: if canUseBehavior()
+        && request.resource.data.studentId != null
+        && request.resource.data.get('status', 'pending') == "pending"
+        && !request.resource.data.keys().hasAny(["cancelledAt", "cancelledByUid", "cancelledByName", "cancellationReason", "cancellationNote"])
+        && exists(/databases/$(database)/documents/students/$(request.resource.data.studentId))
+        && request.resource.data.assignedByUid == request.auth.uid
+        && request.resource.data.grade == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.grade
+        && (canOverrideBehaviorThreshold()
+          || (request.resource.data.postThreshold == false
+            && request.resource.data.thresholdAcknowledged == false
+            && request.resource.data.servedCountAtAssignment < 6));
+      allow update: if (
+        validCancellation(resource.data, request.resource.data)
+        && getAfter(/databases/$(database)/documents/behaviorReteachSummaries/$(recordId)).data.status == "cancelled"
+        && cancellationContactIsSynced(recordId)
+        && cancellationMilestoneIsSynced(recordId, resource.data)
+      ) || (
+        ((resource.data.status == "pending" && request.resource.data.status == "served")
+          || (resource.data.status == "served" && request.resource.data.status == "pending"))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status", "servedAt", "servedByUid", "servedByName", "servedPostThreshold"
+        ])
+        && canUseBehavior() && canAccessBehaviorStudent(resource.data.studentId)
+      );
+      allow delete: if false;
+    }
+
+    match /behaviorReteachSummaries/{recordId} {
+      allow read: if canUseBehavior();
+      allow create, update: if canUseBehavior() && behaviorSummaryMatchesRecord(recordId);
+      allow delete: if canOverrideBehaviorThreshold();
+    }
+
+    match /behaviorHomeContactMilestones/{milestoneId} {
+      allow read: if canUseBehavior();
+      allow create: if canUseBehavior() && behaviorMilestoneMatchesRecord();
+      allow update: if canUseBehavior() && ((
+        request.resource.data.diff(resource.data).affectedKeys().hasAny(["lastCancelledReteachId"])
+        && milestoneCancellationIsValid()
+      ) || (
+        behaviorMilestoneMatchesRecord()
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.schoolYear == resource.data.schoolYear
+        && request.resource.data.assignmentCount == resource.data.assignmentCount + 1
+        && (resource.data.thirdReteachReached != true || request.resource.data.thirdReteachReached == true)));
+      allow delete: if canOverrideBehaviorThreshold();
+    }
+
+    match /behaviorHomeContactRequirements/{recordId} {
+      allow read: if canOverrideBehaviorThreshold()
+        || (canUseBehavior() && (
+          canAccessBehaviorStudent(resource.data.studentId)
+          || resource.data.assignedByUid == request.auth.uid
+        ));
+      allow create: if canUseBehavior()
+        && request.resource.data.assignedByUid == request.auth.uid
+        && homeContactRequirementMatchesRecord(recordId);
+      allow update: if contactCancellationIsValid(recordId) || (
+        (canOverrideBehaviorThreshold()
+          || (canUseBehavior() && resource.data.assignedByUid == request.auth.uid))
+        && resource.data.status == "pending"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "contactedParty",
+          "method",
+          "attemptDate",
+          "successful",
+          "note",
+          "recordedByUid",
+          "recordedByName",
+          "recordedAt",
+          "completedAt"
+        ])
+        && request.resource.data.status == "completed"
+        && request.resource.data.contactedParty is string
+        && request.resource.data.contactedParty.size() > 0
+        && request.resource.data.method is string
+        && request.resource.data.method.size() > 0
+        && request.resource.data.attemptDate is string
+        && request.resource.data.attemptDate.size() > 0
+        && request.resource.data.successful is bool
+        && request.resource.data.recordedByUid == request.auth.uid);
+      allow delete: if canOverrideBehaviorThreshold();
+    }
+
+    match /behaviorBuybacks/{buybackId} {
+      allow read: if canUseBehavior();
+      allow create: if canOverrideBehaviorThreshold()
+        && request.resource.data.keys().hasOnly([
+          "studentId",
+          "studentName",
+          "grade",
+          "homeroom",
+          "buybackDate",
+          "schoolYear",
+          "recordedByUid",
+          "recordedByName",
+          "recordedAt"
+        ])
+        && request.resource.data.studentId != null
+        && exists(/databases/$(database)/documents/students/$(request.resource.data.studentId))
+        && request.resource.data.recordedByUid == request.auth.uid
+        && request.resource.data.grade == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.grade;
+      allow update: if false;
+      allow delete: if canOverrideBehaviorThreshold();
     }
 
     match /behaviorLogs/{recordId} {
@@ -151,7 +576,9 @@ service cloud.firestore {
 
     match /attendance/{recordId} {
       allow read: if canUseAcademic() && canAccessStudent(resource.data.studentId);
-      allow create: if canUseAcademic() && canAccessStudent(request.resource.data.studentId);
+      allow create: if canUseAcademic()
+        && canAccessStudent(request.resource.data.studentId)
+        && request.resource.data.grade == get(/databases/$(database)/documents/students/$(request.resource.data.studentId)).data.grade;
       allow update, delete: if canUseAcademic() && canAccessStudent(resource.data.studentId);
     }
 
@@ -168,9 +595,67 @@ service cloud.firestore {
     }
 
     match /deck/{deckId} {
-      allow read: if canUseAcademic() && (isSchoolwide() || resource.data.createdBy == request.auth.uid);
-      allow create: if canUseAcademic() && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if canUseAcademic() && (isSchoolwide() || resource.data.createdBy == request.auth.uid);
+      allow get: if canUseAcademic() && canAccessAcademicLanePath(deckId);
+      allow list: if canUseAcademic() && (isSchoolwide()
+        || (validAcademicLaneDocument(deckId, resource.data) && hasAssignedGradeAccess(resource.data.grade)));
+      allow create: if canUseAcademic()
+        && validAcademicLaneDocument(deckId, request.resource.data)
+        && hasGradeAccess(request.resource.data.grade);
+      allow update: if canUseAcademic()
+        && validAcademicLaneDocument(deckId, resource.data)
+        && validAcademicLaneDocument(deckId, request.resource.data)
+        && request.resource.data.grade == resource.data.grade
+        && request.resource.data.laneId == resource.data.laneId
+        && hasGradeAccess(resource.data.grade);
+      allow delete: if canUseAcademic()
+        && validAcademicLaneDocument(deckId, resource.data)
+        && hasGradeAccess(resource.data.grade);
+    }
+
+    match /academicSessions/{sessionDate} {
+      allow get: if canUseAcademic() && canAccessAcademicLanePath(sessionDate);
+      allow list: if canUseAcademic() && (isSchoolwide()
+        || (validAcademicLaneDocument(sessionDate, resource.data) && hasAssignedGradeAccess(resource.data.grade)));
+      allow create: if canUseAcademic()
+        && validAcademicLaneDocument(sessionDate, request.resource.data)
+        && hasGradeAccess(request.resource.data.grade);
+      allow update: if canUseAcademic()
+        && validAcademicLaneDocument(sessionDate, resource.data)
+        && validAcademicLaneDocument(sessionDate, request.resource.data)
+        && request.resource.data.grade == resource.data.grade
+        && request.resource.data.laneId == resource.data.laneId
+        && hasGradeAccess(resource.data.grade);
+      allow delete: if canUseAcademic()
+        && validAcademicLaneDocument(sessionDate, resource.data)
+        && hasGradeAccess(resource.data.grade);
+    }
+
+    // Immutable, student-scoped events preserve changes that overwrite or remove
+    // the current operational record (for example attendance undo or reteach undo).
+    match /studentRecordEvents/{eventId} {
+      allow read: if (
+          resource.data.domain == "academic"
+          && canUseAcademic()
+          && canAccessStudent(resource.data.studentId)
+        ) || (
+          resource.data.domain == "behavior"
+          && canUseBehavior()
+          && (
+            canAccessBehaviorStudent(resource.data.studentId)
+            || resource.data.visibleToUids.hasAny([request.auth.uid])
+          )
+        );
+      allow create: if request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.studentId != null
+        && request.resource.data.visibleToUids is list
+        && request.resource.data.visibleToUids.hasAny([request.auth.uid])
+        && (
+          (request.resource.data.domain == "academic"
+            && canUseAcademic()
+            && canAccessStudent(request.resource.data.studentId))
+          || (request.resource.data.domain == "behavior" && canUseBehavior())
+        );
+      allow update, delete: if false;
     }
 
     match /app/{document=**} {

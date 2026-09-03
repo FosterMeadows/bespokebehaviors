@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import ela8 from "../data/standards/ela8.json";
 
 // Softer, less saturated colors

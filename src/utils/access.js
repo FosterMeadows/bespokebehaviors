@@ -38,8 +38,23 @@ export function canUseLegacyTools(profile) {
   return roles.includes("owner");
 }
 
+export function canUseCommandCenter(profile) {
+  return canUseLegacyTools(profile);
+}
+
 export function canUseAdmin(profile) {
   return isSchoolwide(profile);
+}
+
+export function canOverrideBehaviorThreshold(profile) {
+  if (!isEnabled(profile)) return false;
+  const roles = rolesFor(profile);
+  return roles.includes("admin") || roles.includes("owner");
+}
+
+export function canCancelBehaviorReteach(profile, userId, record) {
+  return Boolean(userId) && canUseBehavior(profile) && record?.status === "pending"
+    && (canOverrideBehaviorThreshold(profile) || record.assignedByUid === userId);
 }
 
 export function getAllowedGradeLevels(profile) {

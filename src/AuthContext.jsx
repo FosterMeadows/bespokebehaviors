@@ -1,33 +1,21 @@
 // src/AuthContext.jsx
 import React, { createContext, useEffect, useState } from "react";
-import { auth, provider, db } from "./firebaseConfig";
+import { auth, provider, db, qaEmulatorMode } from "./firebaseConfig";
 import {
   browserLocalPersistence,
-  getRedirectResult,
   onAuthStateChanged,
   setPersistence,
+  signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect,
   signOut
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { onSnapshot } from "firebase/firestore";
+import { QA_PASSWORD } from "./qa/personas";
 
 export const AuthContext = createContext();
 
 const EMPTY_PROFILE = { gradeLevels: [], roles: [], features: {} };
-const DEV_PROFILE = {
-  displayName: "Dev Owner",
-  contactEmail: "dev@example.test",
-  gradeLevels: ["6", "7", "8"],
-  roles: ["owner", "academic", "admin"],
-  features: {
-    academic: true,
-    behavior: true,
-    legacyTools: true,
-    admin: true
-  }
-};
-
 function describeAuthError(err) {
   if (!err) return "Google sign-in failed.";
   return [err.code, err.message].filter(Boolean).join(": ") || "Google sign-in failed.";
@@ -41,16 +29,10 @@ export function AuthProvider({ children }) {
   const [authDebug, setAuthDebug] = useState("Auth initializing...");
 
   useEffect(() => {
+    let unsubscribeProfile = () => {};
     setPersistence(auth, browserLocalPersistence)
       .then(() => {
         setAuthDebug("Auth persistence ready.");
-        return getRedirectResult(auth);
-      })
-      .then((result) => {
-        setAuthDebug(result?.user ? "Google sign-in completed." : "No redirect result returned.");
-        if (result?.user) {
-          setAuthError("");
-        }
       })
       .catch((err) => {
         const message = describeAuthError(err);
@@ -59,6 +41,8 @@ export function AuthProvider({ children }) {
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      unsubscribeProfile();
+      unsubscribeProfile = () => {};
       setProfileLoading(true);
 
       if (!u) {
@@ -74,17 +58,34 @@ export function AuthProvider({ children }) {
       try {
         const ref = doc(db, "teachers", u.uid);
         const snap = await getDoc(ref);
-        const nextProfile = snap.exists() ? snap.data() : EMPTY_PROFILE;
-        setProfile(nextProfile);
+        if (!snap.exists()) {
+          const pendingProfile = {
+            displayName: u.displayName || u.email || "Teacher",
+            contactEmail: u.email || ""
+          };
+          await setDoc(ref, pendingProfile);
+        }
+        if (auth.currentUser?.uid !== u.uid) return;
+        unsubscribeProfile = onSnapshot(ref, profileSnapshot => {
+          setProfile(profileSnapshot.exists() ? { ...EMPTY_PROFILE, ...profileSnapshot.data() } : EMPTY_PROFILE);
+          setProfileLoading(false);
+          setAuthDebug("Teacher access is current.");
+        }, err => {
+          setProfile(EMPTY_PROFILE);
+          setProfileLoading(false);
+          setAuthDebug(`Teacher profile failed to refresh: ${describeAuthError(err)}`);
+        });
       } catch (err) {
         setProfile(EMPTY_PROFILE);
         setAuthDebug(`Teacher profile failed to load: ${describeAuthError(err)}`);
-      } finally {
         setProfileLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeProfile();
+    };
   }, []);
 
   const login = async () => {
@@ -92,16 +93,8 @@ export function AuthProvider({ children }) {
     setAuthDebug("Starting Google sign-in...");
     try {
       await setPersistence(auth, browserLocalPersistence);
-      const isLocalDevelopment =
-        import.meta.env.DEV &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-      if (isLocalDevelopment) {
-        const result = await signInWithPopup(auth, provider);
-        setAuthDebug(result.user ? "Google sign-in completed." : "Google sign-in returned no account.");
-      } else {
-        await signInWithRedirect(auth, provider);
-      }
+      const result = await signInWithPopup(auth, provider);
+      setAuthDebug(result.user ? "Google sign-in completed." : "Google sign-in returned no account.");
     } catch (err) {
       const message = describeAuthError(err);
       setAuthError(message);
@@ -109,27 +102,19 @@ export function AuthProvider({ children }) {
     }
   };
   const logout = () => signOut(auth);
-  const devLogin = () => {
-    if (!import.meta.env.DEV) return;
-    setUser({
-      uid: "dev-owner",
-      displayName: "Dev Owner",
-      email: "dev@example.test"
-    });
-    setProfile(DEV_PROFILE);
-    setProfileLoading(false);
+  const qaLogin = async email => {
+    if (!qaEmulatorMode) return;
+    setAuthError("");
+    try {
+      await signInWithEmailAndPassword(auth, email, QA_PASSWORD);
+    } catch (err) {
+      setAuthError(`QA sign-in failed: ${describeAuthError(err)}`);
+    }
   };
-  const activeLogout = user?.uid === "dev-owner"
-    ? () => {
-        setUser(null);
-        setProfile(null);
-        setProfileLoading(false);
-      }
-    : logout;
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, profileLoading, authError, authDebug, setProfile, login, logout: activeLogout, devLogin }}
+      value={{ user, profile, profileLoading, authError, authDebug, setProfile, login, logout, qaLogin, qaEmulatorMode }}
     >
       {children}
     </AuthContext.Provider>

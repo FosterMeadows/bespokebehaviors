@@ -1,26 +1,26 @@
 // Layout.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Link, useLocation } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router";
 import {
   BookOpenCheck,
   BadgeCheck,
   ChevronDown,
-  ClipboardList,
-  FileText,
-  GraduationCap,
   History,
+  BarChart3,
+  ChartColumnIncreasing,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
-  NotebookPen,
+  MessageSquareWarning,
+  PhoneCall,
   Search,
-  Settings,
   ShieldCheck,
-  Timer,
   Upload,
   UserCog,
   UserCircle
 } from "lucide-react";
-import { canUseAcademic, canUseAdmin, canUseBehavior, canUseLegacyTools } from "../utils/access";
+import { canOverrideBehaviorThreshold, canUseAcademic, canUseAdmin, canUseBehavior, canUseCommandCenter, canUseLegacyTools } from "../utils/access";
+import ReportProblemDialog from "./ReportProblemDialog.jsx";
 
 function classNames(...c) {
   return c.filter(Boolean).join(" ");
@@ -42,36 +42,45 @@ function InitialsAvatar({ name }) {
 }
 
 const PRIMARY_ITEMS = [
-  { to: "/academic", label: "Academic", icon: BookOpenCheck, gate: canUseAcademic },
-  { to: "/behavior", label: "Behavior", icon: ShieldCheck, gate: canUseBehavior },
-  { to: "/students", label: "Students", icon: Search }
-];
-
-const LEGACY_ITEMS = [
-  { to: "/dashboard", label: "Legacy Dashboard", icon: LayoutDashboard },
-  { to: "/dailyplan", label: "Plans", icon: FileText },
-  { to: "/standards", label: "Standards", icon: GraduationCap },
-  { to: "/teachernotes", label: "Notes", icon: NotebookPen },
-  { to: "/megachecklist", label: "Checklist", icon: ClipboardList },
-  { to: "/gradecalculator", label: "Grade Calculator", icon: FileText },
-  { to: "/one-minute-human", label: "One-Minute Human", icon: Timer },
-  { to: "/log", label: "Old Behavior Log", icon: ShieldCheck }
+  { to: "/academic", label: "Academic", icon: BookOpenCheck, gate: canUseAcademic, tone: "sky" },
+  { to: "/behavior", label: "Behavior", icon: ShieldCheck, gate: canUseBehavior, tone: "emerald" },
+  { to: "/students", label: "Student History", icon: Search, tone: "violet", gate: profile => canUseAcademic(profile) || canUseBehavior(profile) }
 ];
 
 const ADMIN_ITEMS = [
+  { to: "/admin/analytics", label: "Analytics", icon: ChartColumnIncreasing },
+  { to: "/admin/operations", label: "Operational Health", icon: BarChart3 },
+  { to: "/admin/support", label: "Support Reports", icon: LifeBuoy },
   { to: "/history", label: "History", icon: History },
   { to: "/admin/import-students", label: "Import Students", icon: Upload }
 ];
 
-function TopNavLink({ to, label, icon }) {
+const PRIMARY_NAV_TONES = {
+  sky: {
+    interaction: "hover:bg-sky-100 focus:ring-sky-400",
+    active: "border-sky-200 bg-sky-100 text-sky-950"
+  },
+  emerald: {
+    interaction: "hover:bg-emerald-100 focus:ring-emerald-400",
+    active: "border-emerald-200 bg-emerald-100 text-emerald-950"
+  },
+  violet: {
+    interaction: "hover:bg-violet-100 focus:ring-violet-400",
+    active: "border-violet-200 bg-violet-100 text-violet-950"
+  }
+};
+
+function TopNavLink({ to, label, icon, tone = "sky" }) {
+  const toneClasses = PRIMARY_NAV_TONES[tone] || PRIMARY_NAV_TONES.sky;
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
         classNames(
           "inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition",
-          "hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-400",
-          isActive ? "border border-sky-200 bg-sky-100 text-sky-950" : "border border-transparent text-slate-700"
+          "focus:outline-none focus:ring-2",
+          toneClasses.interaction,
+          isActive ? `border ${toneClasses.active}` : "border border-transparent text-slate-700"
         )
       }
     >
@@ -143,7 +152,7 @@ function Menu({ label, icon, items, open, onToggle, onClose }) {
   );
 }
 
-function AccountMenu({ displayName, email, logout, open, onToggle, onClose, active }) {
+function AccountMenu({ displayName, email, logout, open, onToggle, onClose, onReport, active }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -191,6 +200,14 @@ function AccountMenu({ displayName, email, logout, open, onToggle, onClose, acti
             </Link>
             <button
               type="button"
+              onClick={() => { onClose(); onReport(); }}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-amber-50 hover:text-amber-950"
+            >
+              <MessageSquareWarning className="h-4 w-4 text-amber-600" />
+              Report a Problem
+            </button>
+            <button
+              type="button"
               onClick={() => { onClose(); logout(); }}
               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-950"
             >
@@ -206,20 +223,21 @@ function AccountMenu({ displayName, email, logout, open, onToggle, onClose, acti
 
 export default function Layout({ children, displayName, logout, profile }) {
   const location = useLocation();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const showLegacyTools = canUseLegacyTools(profile);
+  const showCommandCenter = canUseCommandCenter(profile);
   const showAdminTools = canUseAdmin(profile);
+  const canManageHomeContacts = canOverrideBehaviorThreshold(profile);
   const adminItems = showLegacyTools
-    ? [...ADMIN_ITEMS, { to: "/admin/teachers", label: "Manage Teachers", icon: UserCog }]
-    : ADMIN_ITEMS;
+    ? [...ADMIN_ITEMS, ...(canManageHomeContacts ? [{ to: "/admin/home-contacts", label: "Home Contacts", icon: PhoneCall }] : []), { to: "/admin/teachers", label: "Manage Teachers", icon: UserCog }]
+    : [...ADMIN_ITEMS, ...(canManageHomeContacts ? [{ to: "/admin/home-contacts", label: "Home Contacts", icon: PhoneCall }] : [])];
 
   const visiblePrimary = PRIMARY_ITEMS.filter(item => !item.gate || item.gate(profile));
   const isAcademicPath = location.pathname === "/academic" || location.pathname.startsWith("/academic/");
 
   useEffect(() => {
-    setMoreOpen(false);
     setAdminOpen(false);
     setAccountOpen(false);
   }, [location.pathname]);
@@ -246,19 +264,8 @@ export default function Layout({ children, displayName, logout, profile }) {
           </nav>
 
           <div className="flex items-center gap-1">
-            {showLegacyTools && (
-              <Menu
-                label="More"
-                icon={Settings}
-                items={LEGACY_ITEMS}
-                open={moreOpen}
-                onToggle={() => {
-                  setMoreOpen(open => !open);
-                  setAdminOpen(false);
-                  setAccountOpen(false);
-                }}
-                onClose={() => setMoreOpen(false)}
-              />
+            {showCommandCenter && (
+              <TopNavLink to="/command-center" label="Command Center" icon={LayoutDashboard} tone="violet" />
             )}
             {showAdminTools && (
               <Menu
@@ -268,7 +275,6 @@ export default function Layout({ children, displayName, logout, profile }) {
                 open={adminOpen}
                 onToggle={() => {
                   setAdminOpen(open => !open);
-                  setMoreOpen(false);
                   setAccountOpen(false);
                 }}
                 onClose={() => setAdminOpen(false)}
@@ -282,10 +288,10 @@ export default function Layout({ children, displayName, logout, profile }) {
               active={location.pathname === "/profile"}
               onToggle={() => {
                 setAccountOpen(open => !open);
-                setMoreOpen(false);
                 setAdminOpen(false);
               }}
               onClose={() => setAccountOpen(false)}
+              onReport={() => setReportOpen(true)}
             />
           </div>
         </div>
@@ -294,6 +300,12 @@ export default function Layout({ children, displayName, logout, profile }) {
       <main className={isAcademicPath ? "min-h-[calc(100svh-4.5rem)] bg-white" : "mx-auto max-w-7xl px-4 py-6"}>
         {children}
       </main>
+      <ReportProblemDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        currentPath={location.pathname}
+        reporterName={displayName}
+      />
     </div>
   );
 }

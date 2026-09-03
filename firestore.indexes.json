@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "grade", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "behaviorReteaches",
       "queryScope": "COLLECTION",
       "fields": [
@@ -22,6 +30,38 @@
       "fields": [
         { "fieldPath": "studentId", "order": "ASCENDING" },
         { "fieldPath": "completedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "behaviorReteaches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "assignedByUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "behaviorHomeContactRequirements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "assignedByUid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "studentRecordEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "domain", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "studentRecordEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "domain", "order": "ASCENDING" },
+        { "fieldPath": "visibleToUids", "arrayConfig": "CONTAINS" }
       ]
     }
   ],

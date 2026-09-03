@@ -1,6 +1,6 @@
 // src/pages/WeekAtAGlance.jsx
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";

@@ -1,93 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Check, ClipboardPaste, Pencil, Search, ShieldCheck, Upload, UsersRound, X } from "lucide-react";
+import { Check, ClipboardPaste, Pencil, Search, ShieldCheck, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { importStudentRoster, previewStudentRosterImport, updateStudentRecord } from "../../services/academic";
-
-const EXPECTED_COLUMNS = ["lastName", "firstName", "grade", "homeroom", "externalStudentId"];
-const HEADER_ALIASES = {
-  lastname: "lastName",
-  surname: "lastName",
-  firstname: "firstName",
-  givenname: "firstName",
-  grade: "grade",
-  gradelevel: "grade",
-  homeroom: "homeroom",
-  homebase: "homeroom",
-  studentid: "externalStudentId",
-  studentnumber: "externalStudentId",
-  sisid: "externalStudentId",
-  stateid: "externalStudentId"
-};
-
-function normalizedHeader(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function parseRosterText(text) {
-  const lines = String(text || "").split(/\r?\n/).filter(line => line.trim());
-  if (!lines.length) return [];
-  const firstCells = lines[0].split("\t").map(cell => cell.trim());
-  const detectedHeaders = firstCells.map(cell => HEADER_ALIASES[normalizedHeader(cell)] || "");
-  const hasHeaders = EXPECTED_COLUMNS.every(column => detectedHeaders.includes(column));
-  const columnOrder = hasHeaders ? detectedHeaders : EXPECTED_COLUMNS;
-  const dataLines = hasHeaders ? lines.slice(1) : lines;
-
-  const parsed = dataLines.map((line, index) => {
-    const cells = line.split("\t").map(cell => cell.trim());
-    const values = {};
-    columnOrder.forEach((column, cellIndex) => {
-      if (column) values[column] = cells[cellIndex] || "";
-    });
-    const lastName = values.lastName || "";
-    const firstName = values.firstName || "";
-    const grade = values.grade || "";
-    const homeroom = values.homeroom || "";
-    const externalStudentId = values.externalStudentId || "";
-    const errors = [];
-    if (!lastName) errors.push("Last name is missing");
-    if (!firstName) errors.push("First name is missing");
-    if (!grade) errors.push("Grade level is missing");
-    if (!homeroom) errors.push("Homeroom is missing");
-    if (!externalStudentId) errors.push("Student ID is missing");
-    if (cells.length < 5) errors.push("Expected five spreadsheet columns");
-    return {
-      rowNumber: index + (hasHeaders ? 2 : 1),
-      displayName: [firstName, lastName].filter(Boolean).join(" "),
-      grade,
-      homeroom,
-      externalStudentId,
-      errors,
-      valid: errors.length === 0
-    };
-  });
-
-  const idCounts = new Map();
-  parsed.forEach(row => {
-    const key = row.externalStudentId.trim().toUpperCase();
-    if (key) idCounts.set(key, (idCounts.get(key) || 0) + 1);
-  });
-  return parsed.map(row => {
-    const duplicate = row.externalStudentId && idCounts.get(row.externalStudentId.trim().toUpperCase()) > 1;
-    if (!duplicate) return row;
-    return { ...row, valid: false, errors: [...row.errors, "Duplicate student ID in this paste"] };
-  });
-}
-
-function redactRosterText(text) {
-  const lines = String(text || "").split(/\r?\n/);
-  if (!lines.length || !text) return "";
-  const firstCells = lines[0].split("\t").map(cell => cell.trim());
-  const detectedHeaders = firstCells.map(cell => HEADER_ALIASES[normalizedHeader(cell)] || "");
-  const hasHeaders = detectedHeaders.includes("externalStudentId");
-  const idColumn = hasHeaders ? detectedHeaders.indexOf("externalStudentId") : 4;
-  return lines.map((line, index) => {
-    if (hasHeaders && index === 0) return line;
-    const cells = line.split("\t");
-    if (cells[idColumn] !== undefined && cells[idColumn].trim()) cells[idColumn] = "[hidden]";
-    return cells.join("\t");
-  }).join("\n");
-}
+import { buildManualRosterRow, parseRosterText, redactRosterText, revalidateRosterRows } from "../../utils/studentRosterImport";
 
 function AdminTabButton({ active, children, onClick }) {
   return (
@@ -114,6 +30,11 @@ export default function BulkImportStudents() {
   const [activeView, setActiveView] = useState("import");
   const [raw, setRaw] = useState("");
   const parsedRows = useMemo(() => parseRosterText(raw), [raw]);
+  const [rowChanges, setRowChanges] = useState({});
+  const [removedRowNumbers, setRemovedRowNumbers] = useState(() => new Set());
+  const editableRows = useMemo(() => revalidateRosterRows(parsedRows
+    .filter(row => !removedRowNumbers.has(row.rowNumber))
+    .map(row => ({ ...row, ...(rowChanges[row.rowNumber] || {}) }))), [parsedRows, removedRowNumbers, rowChanges]);
   const [previewRows, setPreviewRows] = useState([]);
   const [previewing, setPreviewing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -124,6 +45,9 @@ export default function BulkImportStudents() {
   const [editForm, setEditForm] = useState({ displayName: "", grade: "", homeroom: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [editMessage, setEditMessage] = useState("");
+  const [manualDraft, setManualDraft] = useState({ studentName: "", externalStudentId: "", grade: "", homeroom: "" });
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualMessage, setManualMessage] = useState(null);
 
   useEffect(() => onSnapshot(
     query(collection(db, "students"), orderBy("displayName", "asc")),
@@ -133,7 +57,7 @@ export default function BulkImportStudents() {
 
   useEffect(() => {
     let ignore = false;
-    if (!parsedRows.length) {
+    if (!editableRows.length) {
       setPreviewRows([]);
       setPreviewing(false);
       return undefined;
@@ -141,10 +65,10 @@ export default function BulkImportStudents() {
     setPreviewing(true);
     const timer = setTimeout(async () => {
       try {
-        const preview = await previewStudentRosterImport(parsedRows);
+        const preview = await previewStudentRosterImport(editableRows);
         if (!ignore) setPreviewRows(preview);
       } catch {
-        if (!ignore) setPreviewRows(parsedRows.map(row => ({ ...row, status: row.valid ? "checking" : "invalid" })));
+        if (!ignore) setPreviewRows(editableRows.map(row => ({ ...row, status: row.valid ? "checking" : "invalid" })));
       } finally {
         if (!ignore) setPreviewing(false);
       }
@@ -153,9 +77,16 @@ export default function BulkImportStudents() {
       ignore = true;
       clearTimeout(timer);
     };
-  }, [parsedRows]);
+  }, [editableRows]);
 
-  const rows = previewRows.length === parsedRows.length ? previewRows : parsedRows.map(row => ({ ...row, status: row.valid ? "checking" : "invalid" }));
+  const previewIsCurrent = previewRows.length === editableRows.length && previewRows.every((row, index) => {
+    const editable = editableRows[index];
+    return row.rowNumber === editable?.rowNumber
+      && row.studentName === editable.studentName
+      && row.grade === editable.grade
+      && row.homeroomSource === editable.homeroomSource;
+  });
+  const rows = previewIsCurrent ? previewRows : editableRows.map(row => ({ ...row, status: row.valid ? "checking" : "invalid" }));
   const invalidCount = rows.filter(row => !row.valid).length;
   const importableCount = rows.filter(row => row.valid).length;
   const filteredStudents = useMemo(() => {
@@ -171,13 +102,35 @@ export default function BulkImportStudents() {
     try {
       const result = await importStudentRoster(rows);
       setReport(result);
-      const refreshed = await previewStudentRosterImport(parsedRows);
+      const refreshed = await previewStudentRosterImport(editableRows);
       setPreviewRows(refreshed);
     } catch {
       setReport({ ok: false, error: "The roster could not be imported. No student identifiers were displayed or logged." });
     } finally {
       setBusy(false);
     }
+  }
+
+  function updateImportRow(rowNumber, field, value) {
+    setRowChanges(current => ({
+      ...current,
+      [rowNumber]: { ...(current[rowNumber] || {}), [field]: value },
+    }));
+    setReport(null);
+  }
+
+  function removeImportRow(rowNumber) {
+    setRemovedRowNumbers(current => new Set(current).add(rowNumber));
+    setPreviewRows([]);
+    setReport(null);
+  }
+
+  function clearImport() {
+    setRaw("");
+    setRowChanges({});
+    setRemovedRowNumbers(new Set());
+    setPreviewRows([]);
+    setReport(null);
   }
 
   function beginEdit(student) {
@@ -202,6 +155,32 @@ export default function BulkImportStudents() {
     }
   }
 
+  async function addIndividualStudent(event) {
+    event.preventDefault();
+    const row = buildManualRosterRow(manualDraft);
+    if (!row.valid) {
+      setManualMessage({ ok: false, text: row.errors.join(" · ") });
+      return;
+    }
+    setManualSaving(true);
+    setManualMessage(null);
+    try {
+      const [preview] = await previewStudentRosterImport([row]);
+      if (preview.status !== "new") {
+        setManualMessage({ ok: false, text: "That Student ID or exact student record already exists. Use Manage Students to edit the existing record." });
+        return;
+      }
+      const result = await importStudentRoster([preview]);
+      if (!result.ok || result.created !== 1) throw new Error("Student was not created");
+      setManualMessage({ ok: true, text: `${row.displayName} was added to the school roster.` });
+      setManualDraft({ studentName: "", externalStudentId: "", grade: "", homeroom: "" });
+    } catch (error) {
+      setManualMessage({ ok: false, text: `Student could not be added: ${error.message}` });
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
@@ -214,6 +193,7 @@ export default function BulkImportStudents() {
         </div>
         <div className="inline-flex self-start gap-1 rounded-md border border-slate-200 bg-slate-50/70 p-0.5 sm:self-auto">
           <AdminTabButton active={activeView === "import"} onClick={() => setActiveView("import")}>Import Roster</AdminTabButton>
+          <AdminTabButton active={activeView === "add"} onClick={() => setActiveView("add")}>Add Student</AdminTabButton>
           <AdminTabButton active={activeView === "manage"} onClick={() => setActiveView("manage")}>Manage Students</AdminTabButton>
         </div>
       </header>
@@ -226,7 +206,7 @@ export default function BulkImportStudents() {
                 <ClipboardPaste className="mt-0.5 h-5 w-5 text-slate-500" aria-hidden="true" />
                 <div>
                   <h1 className="text-base font-bold text-slate-950">Paste spreadsheet rows</h1>
-                  <p className="mt-1 text-sm text-slate-600">Copy LastName, FirstName, Grade Level, Homeroom, and Student ID. Headers are recommended.</p>
+                  <p className="mt-1 text-sm text-slate-600">Copy Student Name, Student ID, Grade Level, and Homeroom. Names must use LastName, FirstName format; middle names are omitted, and only the teacher name is stored from Homeroom.</p>
                 </div>
               </div>
               <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"><ShieldCheck className="h-3.5 w-3.5" />Student IDs stay hidden</div>
@@ -234,12 +214,15 @@ export default function BulkImportStudents() {
             <textarea
               aria-label="Paste student roster"
               className="h-44 w-full resize-y rounded-lg border border-slate-300 bg-white p-3 font-mono text-sm leading-6 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-              placeholder={`LastName\tFirstName\tGrade Level\tHomeroom\tStudent ID\nSmith\tJordan\t7\tCarter HR\t[hidden]`}
+              placeholder={`Student Name\tStudent ID\tGrade Level\tHomeroom\nSmith, Jordan\t[hidden]\t7\tHomeroom 7th Carter`}
               value={redactRosterText(raw)}
               readOnly={Boolean(raw)}
               onPaste={event => {
                 event.preventDefault();
                 setRaw(event.clipboardData.getData("text"));
+                setRowChanges({});
+                setRemovedRowNumbers(new Set());
+                setPreviewRows([]);
                 setReport(null);
               }}
               onChange={event => {
@@ -247,7 +230,7 @@ export default function BulkImportStudents() {
                 setReport(null);
               }}
             />
-            {raw && <div className="mt-2 flex justify-end"><button type="button" onClick={() => { setRaw(""); setPreviewRows([]); setReport(null); }} className="text-xs font-semibold text-slate-600 hover:text-slate-900">Clear pasted roster</button></div>}
+            {raw && <div className="mt-2 flex items-center justify-between gap-4"><p className="text-xs text-slate-500">Correct rows in the preview below. Student IDs remain protected.</p><button type="button" onClick={clearImport} className="text-xs font-semibold text-slate-600 hover:text-slate-900">Clear pasted roster</button></div>}
           </section>
 
           <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md shadow-slate-200/40">
@@ -258,15 +241,42 @@ export default function BulkImportStudents() {
             {report && <div className={`m-4 rounded-lg border px-4 py-3 text-sm ${report.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>{report.ok ? `${report.created} created, ${report.updated} updated, ${report.unchanged} unchanged, ${report.skipped} skipped.` : report.error}</div>}
             <div className="max-h-80 overflow-auto">
               <table className="min-w-full table-fixed text-sm">
-                <thead className="sticky top-0 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr><th className="w-20 px-4 py-2.5">Row</th><th className="px-4 py-2.5">Student</th><th className="w-32 px-4 py-2.5">Grade</th><th className="w-64 px-4 py-2.5">Homeroom</th><th className="w-40 px-4 py-2.5">Status</th></tr></thead>
+                <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500"><tr><th className="w-16 px-3 py-2.5">Row</th><th className="px-3 py-2.5">Student Name</th><th className="w-28 px-3 py-2.5">Grade</th><th className="w-72 px-3 py-2.5">Homeroom</th><th className="w-32 px-3 py-2.5">Status</th><th className="w-16 px-3 py-2.5"><span className="sr-only">Remove</span></th></tr></thead>
                 <tbody className="divide-y divide-slate-200">
-                  {rows.map(row => <tr key={row.rowNumber} className={row.valid ? "hover:bg-sky-50/40" : "bg-red-50/30"}><td className="px-4 py-3 tabular-nums text-slate-500">{row.rowNumber}</td><td className="px-4 py-3"><div className="font-semibold text-slate-950">{row.displayName || "Incomplete row"}</div>{row.errors.length > 0 && <div className="mt-0.5 text-xs text-red-700">{row.errors.join(" • ")}</div>}</td><td className="px-4 py-3 text-slate-600">{row.grade || "—"}</td><td className="px-4 py-3 text-slate-600">{row.homeroom || "—"}</td><td className="px-4 py-3"><StatusBadge status={previewing && row.valid ? "checking" : row.status} /></td></tr>)}
-                  {!rows.length && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Paste spreadsheet rows above to create a safe import preview.</td></tr>}
+                  {rows.map(row => <tr key={row.rowNumber} className={row.valid ? "hover:bg-sky-50/40" : "bg-red-50/40"}><td className="px-3 py-3 tabular-nums text-slate-500">{row.rowNumber}</td><td className="px-3 py-3"><input aria-label={`Student name for row ${row.rowNumber}`} value={row.studentName} onChange={event => updateImportRow(row.rowNumber, "studentName", event.target.value)} className={`h-9 w-full rounded-md border bg-white px-2.5 text-sm font-medium outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 ${row.errors.some(error => error.startsWith("Student name")) ? "border-red-300" : "border-slate-300"}`} />{row.errors.length > 0 && <div className="mt-1.5 text-xs leading-5 text-red-700">{row.errors.join(" · ")}</div>}</td><td className="px-3 py-3"><input aria-label={`Grade for row ${row.rowNumber}`} value={row.grade} onChange={event => updateImportRow(row.rowNumber, "grade", event.target.value)} className={`h-9 w-full rounded-md border bg-white px-2.5 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 ${row.errors.includes("Grade level is missing") ? "border-red-300" : "border-slate-300"}`} /></td><td className="px-3 py-3"><input aria-label={`Homeroom for row ${row.rowNumber}`} value={row.homeroomSource} onChange={event => updateImportRow(row.rowNumber, "homeroomSource", event.target.value)} className={`h-9 w-full rounded-md border bg-white px-2.5 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 ${row.errors.some(error => error.startsWith("Homeroom")) ? "border-red-300" : "border-slate-300"}`} /></td><td className="px-3 py-3"><StatusBadge status={previewing && row.valid ? "checking" : row.status} /></td><td className="px-3 py-3 text-right"><button type="button" onClick={() => removeImportRow(row.rowNumber)} aria-label={`Remove row ${row.rowNumber}`} title="Remove row" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"><Trash2 className="h-4 w-4" /></button></td></tr>)}
+                  {!rows.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">{raw ? "All pasted rows have been removed." : "Paste spreadsheet rows above to create a safe import preview."}</td></tr>}
                 </tbody>
               </table>
             </div>
           </section>
         </>
+      ) : activeView === "add" ? (
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md shadow-slate-200/40">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h1 className="text-base font-bold text-slate-950">Add an individual student</h1>
+            <p className="mt-1 text-sm text-slate-600">Create a schoolwide roster record using the same protected identity matching as bulk import.</p>
+          </div>
+          <form onSubmit={addIndividualStudent} className="p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-slate-700">Student Name
+                <input autoFocus required value={manualDraft.studentName} onChange={event => setManualDraft(draft => ({ ...draft, studentName: event.target.value }))} placeholder="LastName, FirstName" className="mt-1.5 block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+                <span className="mt-1 block text-xs font-normal text-slate-500">Middle names are omitted automatically.</span>
+              </label>
+              <label className="text-sm font-semibold text-slate-700">Student ID
+                <input required autoComplete="off" value={manualDraft.externalStudentId} onChange={event => setManualDraft(draft => ({ ...draft, externalStudentId: event.target.value }))} className="mt-1.5 block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+                <span className="mt-1 block text-xs font-normal text-slate-500">Used for duplicate protection, then stored only as a secure hash.</span>
+              </label>
+              <label className="text-sm font-semibold text-slate-700">Grade Level
+                <input required value={manualDraft.grade} onChange={event => setManualDraft(draft => ({ ...draft, grade: event.target.value }))} placeholder="e.g. 7" className="mt-1.5 block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">Homeroom Teacher
+                <input required value={manualDraft.homeroom} onChange={event => setManualDraft(draft => ({ ...draft, homeroom: event.target.value }))} placeholder="Teacher name only" className="mt-1.5 block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+              </label>
+            </div>
+            {manualMessage && <div role={manualMessage.ok ? "status" : "alert"} className={`mt-5 rounded-lg border px-4 py-3 text-sm ${manualMessage.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>{manualMessage.text}</div>}
+            <div className="mt-5 flex justify-end"><button type="submit" disabled={manualSaving} className="inline-flex h-10 items-center gap-2 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50"><Check className="h-4 w-4" />{manualSaving ? "Adding…" : "Add Student"}</button></div>
+          </form>
+        </section>
       ) : (
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md shadow-slate-200/40">
           <div className="border-b border-slate-200 p-4">
