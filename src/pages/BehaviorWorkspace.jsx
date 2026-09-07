@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, ClipboardCheck, Download, MapPin, MessageSquareWarning, PhoneCall, Puzzle, Search, Undo2, UserRound, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardCheck, Download, MapPin, PhoneCall, Puzzle, Search, Undo2, UserRound, X } from "lucide-react";
 import { AuthContext } from "../AuthContext.jsx";
 import HomeContactForm from "../components/HomeContactForm.jsx";
 import CancelReteachDialog from "../components/CancelReteachDialog.jsx";
@@ -163,8 +163,9 @@ function TabButton({ active, children, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-semibold shadow-sm transition active:translate-y-px focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
-        active ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/50 hover:text-slate-900"
+      aria-pressed={active}
+      className={`inline-flex min-h-12 shrink-0 items-center justify-center gap-2 border-b-2 px-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 sm:px-3 ${
+        active ? "border-emerald-600 text-emerald-800" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900"
       }`}
     >
       {children}
@@ -189,7 +190,7 @@ function BehaviorWorkflowRail({ currentStep }) {
   const steps = ["Choose a Student", "Set the Situation", "Write the Reteach"];
   const compact = currentStep > 1;
   return (
-    <div className={`relative border-b border-emerald-100 px-2 ${compact ? "pb-3 pt-0" : "pb-4 pt-1"}`} aria-label="How to create a Reteach">
+    <div className={`relative border-b border-slate-200 px-2 ${compact ? "pb-3 pt-0" : "pb-4 pt-1"}`} aria-label="How to create a Reteach">
       <div className={`absolute left-[16.67%] right-[16.67%] h-px bg-slate-200 ${compact ? "top-3" : "top-4"}`} aria-hidden="true" />
       <ol className="relative grid grid-cols-3 gap-2">
         {steps.map((step, index) => {
@@ -197,17 +198,17 @@ function BehaviorWorkflowRail({ currentStep }) {
           const isCurrent = stepNumber === currentStep;
           const isComplete = stepNumber < currentStep;
           return (
-            <li key={step} className={`flex flex-col items-center text-center ${compact ? "gap-1" : "gap-2"}`}>
+            <li key={step} aria-current={isCurrent ? "step" : undefined} className={`flex flex-col items-center text-center ${compact ? "gap-1" : "gap-2"}`}>
               <span className={`flex items-center justify-center rounded-full border font-bold shadow-sm transition-colors ${compact ? "h-6 w-6 text-[11px]" : "h-7 w-7 text-xs"} ${
                 isCurrent
                   ? `border-emerald-700 bg-emerald-700 text-white ${compact ? "ring-2" : "ring-4"} ring-emerald-100`
                   : isComplete
                     ? "border-emerald-300 bg-emerald-100 text-emerald-800"
-                    : "border-slate-200 bg-white text-slate-400"
+                    : "border-slate-300 bg-white text-slate-500"
               }`}>
                 {stepNumber}
               </span>
-              <span className={`${compact ? "text-[11px]" : "text-xs"} font-semibold ${isCurrent ? "text-emerald-950" : isComplete ? "text-emerald-800" : "text-slate-400"}`}>
+              <span className={`${compact ? "text-[11px]" : "text-xs"} font-semibold ${isCurrent ? "text-emerald-950" : isComplete ? "text-emerald-800" : "text-slate-500"}`}>
                 {step}
               </span>
             </li>
@@ -881,26 +882,21 @@ export default function BehaviorWorkspace() {
   const visibleMessage = message;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 shadow-sm ring-1 ring-emerald-200">
-            <MessageSquareWarning className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">Behavior workspace</div>
-            <div className="mt-0.5 text-sm text-slate-600">Assign reteaches and track service.</div>
-          </div>
+    <div className={`mx-auto space-y-6 pb-10 pt-5 sm:pt-9 ${activeTab === "assign" && !selectedStudent ? "max-w-5xl" : "max-w-6xl"}`}>
+      <header className="space-y-5">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Behavior Workspace</h1>
+          <p className="mt-3 text-base leading-6 text-slate-600">Assign reteaches and track service.</p>
         </div>
-        <div className="inline-flex self-start gap-2 sm:self-auto">
+        <div role="group" aria-label="Behavior views" className="flex gap-3 overflow-x-auto border-b border-slate-200 sm:gap-5">
           <TabButton active={activeTab === "assign"} onClick={() => handleTabChange("assign")}>New Reteach</TabButton>
-          <TabButton active={activeTab === "serve"} onClick={() => handleTabChange("serve")}>To Serve <TabCount active={activeTab === "serve"}>{pending.length}</TabCount></TabButton>
+          <TabButton active={activeTab === "serve"} onClick={() => handleTabChange("serve")}>To Serve <TabCount active={activeTab === "serve"}>{pendingLoading ? "…" : pending.length}</TabCount></TabButton>
           <TabButton active={activeTab === "mine"} onClick={() => handleTabChange("mine")}>
             My Reteaches
             {pendingHomeContacts.length > 0 && <TabCount active={activeTab === "mine"} attention>{pendingHomeContacts.length}</TabCount>}
           </TabButton>
         </div>
-      </div>
+      </header>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
@@ -954,72 +950,37 @@ export default function BehaviorWorkspace() {
         </button>
       )}
 
-      {activeTab === "assign" && (
-        <button
-          type="button"
-          onClick={() => handleTabChange("serve")}
-          className={`group flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3.5 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-            pendingLoading
-              ? "border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 text-slate-800 focus:ring-slate-400"
-              : pending.length > 0
-              ? "border-amber-300 bg-gradient-to-r from-amber-50 via-white to-amber-50 text-amber-950 hover:border-amber-400 hover:shadow-md focus:ring-amber-400"
-              : "border-emerald-200 bg-gradient-to-r from-emerald-50/70 via-white to-emerald-50/70 text-emerald-950 hover:border-emerald-300 hover:shadow-md focus:ring-emerald-400"
-          }`}
-        >
-          <span className="flex min-w-0 items-center gap-3">
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-              pendingLoading ? "bg-slate-100 text-slate-500" : pending.length > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-            }`}>
-              {pendingLoading || pending.length > 0
-                ? <Clock3 className="h-5 w-5" aria-hidden="true" />
-                : <CheckCircle2 className="h-5 w-5" aria-hidden="true" />}
-            </span>
-            <span>
-              <span className="block text-sm font-bold">
-                {pendingLoading
-                  ? "Checking the To Serve queue…"
-                  : pending.length === 0
-                  ? "No pending reteaches"
-                  : `There ${pending.length === 1 ? "is" : "are"} ${pending.length} pending ${pending.length === 1 ? "Reteach" : "Reteaches"}.`}
-              </span>
-              <span className="mt-0.5 block text-sm text-slate-600">
-                {pendingLoading
-                  ? "This will only take a moment."
-                  : pending.length === 0
-                  ? "The To Serve queue is currently clear."
-                  : "Open the queue to review students and record service."}
-              </span>
-            </span>
-          </span>
-          <span className="flex shrink-0 items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-            <span className="hidden sm:inline">On Deck</span>
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-          </span>
-        </button>
+      {activeTab === "assign" && !pendingLoading && pending.length > 0 && (
+        <section aria-label="Host reteaches" className="flex flex-col gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-emerald-950">
+              {pending.length} {pending.length === 1 ? "reteach" : "reteaches"} awaiting service
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-emerald-900">Hosting reteaches today? Open the queue to record service.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleTabChange("serve")}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 sm:self-auto"
+          >
+            Open To Serve <span aria-hidden="true">→</span>
+          </button>
+        </section>
       )}
 
       {activeTab === "assign" ? (
         <form onSubmit={handleSubmit} className={`grid gap-5 ${selectedStudent ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
-          <section className="relative space-y-3 rounded-xl border border-emerald-200 bg-gradient-to-br from-white via-white to-emerald-50/60 p-4 shadow-sm transition duration-200 hover:shadow-md">
-            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl" aria-hidden="true">
-              <div className="absolute inset-x-0 top-0 h-1.5 bg-emerald-600" />
-              {!selectedStudent && (
-                <MessageSquareWarning
-                  className="absolute -bottom-10 -right-9 hidden h-44 w-44 text-emerald-200/35 sm:block"
-                  strokeWidth={1}
-                />
-              )}
-            </div>
+          <section className="relative space-y-6 rounded-2xl border border-emerald-200 bg-white p-5 shadow-md shadow-slate-200/60 sm:p-7">
             <div className="relative z-10">
               <BehaviorWorkflowRail currentStep={!selectedStudent ? 1 : situationComplete ? 3 : 2} />
             </div>
             {!selectedStudent ? (
-              <div className="relative z-10 px-4 pb-3 pt-2 sm:px-5">
+              <div className="relative z-10 pb-2 pt-1">
                 <h2 className="text-2xl font-bold text-slate-950">Who needs a Reteach today?</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   Start by choosing an active student from the school roster.
                 </p>
-                <div className="relative mt-4 sm:mr-32 lg:mr-40">
+                <div className="relative mt-5 max-w-2xl">
                   <label className="sr-only" htmlFor="behavior-student-search">Search students</label>
                   <Search className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-emerald-600" />
                   <input
@@ -1031,7 +992,7 @@ export default function BehaviorWorkspace() {
                       setSelectedStudent(null);
                     }}
                     placeholder="Search by student name..."
-                    className="h-12 w-full rounded-xl border border-emerald-200 bg-white pl-12 pr-4 text-sm shadow-sm transition focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-sm transition focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100"
                     autoComplete="off"
                   />
                   {suggestions.length > 0 && (
