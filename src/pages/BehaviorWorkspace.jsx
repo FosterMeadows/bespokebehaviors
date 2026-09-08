@@ -75,12 +75,6 @@ const SERVE_SORT_OPTIONS = [
   { value: "context", label: "Behavior Category" }
 ];
 
-function reteachCountTone(count) {
-  if (count >= 5) return "border-red-200 bg-red-50 text-red-800";
-  if (count >= 4) return "border-amber-200 bg-amber-50 text-amber-800";
-  return "border-slate-200 bg-slate-50 text-slate-600";
-}
-
 function todayInputValue() {
   return new Date().toLocaleDateString("en-CA");
 }
@@ -548,6 +542,24 @@ export default function BehaviorWorkspace() {
     });
   }, [pending, serveFilters]);
 
+  const pendingStudentGroups = useMemo(() => {
+    const groups = new Map();
+    // The first occurrence preserves the selected queue sort for student cards.
+    for (const record of visiblePending) {
+      const key = record.studentId || record.id;
+      if (!groups.has(key)) groups.set(key, { key, student: record, records: [] });
+      groups.get(key).records.push(record);
+    }
+    return [...groups.values()].map(group => ({
+      ...group,
+      records: [...group.records].sort((a, b) =>
+        dateSortValue(a.reteachDate || a.createdAt) - dateSortValue(b.reteachDate || b.createdAt)
+        || dateSortValue(a.createdAt) - dateSortValue(b.createdAt)
+        || String(a.id).localeCompare(String(b.id))
+      )
+    }));
+  }, [visiblePending]);
+
   const pendingByStudent = useMemo(() => pending.reduce((counts, record) => ({
     ...counts,
     [record.studentId]: (counts[record.studentId] || 0) + 1
@@ -699,12 +711,12 @@ export default function BehaviorWorkspace() {
     return (isDevOwner && record.status === "pending") || canCancelBehaviorReteach(profile, user?.uid, record);
   }
 
-  function cancelButton(record) {
+  function cancelButton(record, subtle = false) {
     const allowed = mayCancel(record);
     const label = allowed ? `Cancel Reteach for ${record.studentName}` : "Only the Assigning Teacher or an Admin Can Cancel";
     return <span title={label} className="inline-flex shrink-0">
       <button type="button" aria-label={label} disabled={!allowed || servingIds.includes(record.id)} onClick={() => setCancellingRecord(record)}
-        className="inline-flex h-12 w-12 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300">
+        className={subtle ? "inline-flex h-12 w-12 items-center justify-center rounded-lg border border-red-100 bg-red-50/40 text-red-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300" : "inline-flex h-12 w-12 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"}>
         <X className="h-5 w-5" aria-hidden="true" />
       </button>
     </span>;
@@ -882,7 +894,7 @@ export default function BehaviorWorkspace() {
   const visibleMessage = message;
 
   return (
-    <div className={`mx-auto space-y-6 pb-10 pt-5 sm:pt-9 ${activeTab === "assign" && !selectedStudent ? "max-w-5xl" : "max-w-6xl"}`}>
+    <div className={`mx-auto space-y-6 pb-10 ${activeTab === "serve" ? "pt-2 sm:pt-3" : "pt-5 sm:pt-9"} ${activeTab === "assign" && !selectedStudent ? "max-w-5xl" : "max-w-6xl"}`}>
       <header className="space-y-5">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-950">Behavior Workspace</h1>
@@ -1264,26 +1276,11 @@ export default function BehaviorWorkspace() {
         </form>
       ) : activeTab === "serve" ? (
         <section className="space-y-4">
-          <div className="sticky top-20 z-20 rounded-lg border border-slate-200 border-t-4 border-t-emerald-500 bg-gradient-to-r from-emerald-50/50 via-white to-emerald-50/50 p-3 shadow-sm backdrop-blur-sm">
-            <div className="lg:flex lg:items-center lg:gap-4">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between lg:shrink-0">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-xl font-bold text-slate-950">To Serve</h2>
-                  <span className="inline-flex min-w-7 items-center justify-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-extrabold text-emerald-800">
-                    {pending.length}
-                  </span>
-                </div>
-              </div>
-              {visiblePending.length !== pending.length && (
-                <div className="text-sm font-medium text-slate-500">
-                  Showing {visiblePending.length}
-                </div>
-              )}
-            </div>
-
+          <div className="sticky top-20 z-20 border-b border-slate-200 bg-white p-3">
+            <h2 className="sr-only">To Serve</h2>
+            <div>
             {pending.length > 0 && (
-              <div className="mt-3 grid gap-3 lg:mt-0 lg:flex-1 lg:grid-cols-[minmax(14rem,1fr)_10rem_11rem] lg:items-center">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_11rem] sm:items-center">
                 <label className="relative block">
                   <span className="sr-only">Search student</span>
                   <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -1292,7 +1289,7 @@ export default function BehaviorWorkspace() {
                     value={serveFilters.search}
                     onChange={(event) => setServeFilters((current) => ({ ...current, search: event.target.value }))}
                     placeholder="Search student..."
-                    className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                   />
                 </label>
 
@@ -1301,7 +1298,7 @@ export default function BehaviorWorkspace() {
                   <select
                     value={serveFilters.grade}
                     onChange={(event) => setServeFilters((current) => ({ ...current, grade: event.target.value }))}
-                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                   >
                     <option value="">All grades</option>
                     {serveFilterOptions.grades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}
@@ -1313,7 +1310,7 @@ export default function BehaviorWorkspace() {
                   <select
                     value={serveFilters.sort}
                     onChange={(event) => setServeFilters((current) => ({ ...current, sort: event.target.value }))}
-                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                   >
                     {SERVE_SORT_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>Sort: {option.label}</option>
@@ -1324,6 +1321,8 @@ export default function BehaviorWorkspace() {
             )}
             </div>
           </div>
+
+          {visiblePending.length !== pending.length && <p className="text-sm text-slate-500" role="status">Showing {visiblePending.length} of {pending.length} reteaches</p>}
 
           {pending.length === 0 ? (
             <div className="rounded-lg border border-slate-200 bg-white px-5 py-12 text-center shadow-sm">
@@ -1344,32 +1343,44 @@ export default function BehaviorWorkspace() {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {visiblePending.map((record) => (
-                <div key={record.id} className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md">
-                  <div className="absolute bottom-0 left-0 top-0 w-1 bg-emerald-200" aria-hidden="true" />
-                  <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-y-1">
-                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                      <h3 className="text-lg font-bold text-slate-950">{record.studentName}</h3>
-                      <span className="text-sm font-semibold text-slate-500">
-                        Grade {record.grade || "-"} • Homeroom: {record.homeroom || "Not listed"}
-                      </span>
+              {pendingStudentGroups.map(({ key, student, records }) => (
+                <article key={key} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-b border-emerald-100 bg-emerald-50/50 px-4 py-3">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <h3 className="text-xl font-bold text-slate-950">{student.studentName}</h3>
+                      <span className="text-sm font-semibold text-slate-500">Grade {student.grade || "-"} • Homeroom: {student.homeroom || "Not listed"}</span>
                     </div>
-                    <div className="order-2 flex min-w-0 flex-wrap gap-1.5 text-[11px] font-semibold sm:order-3 sm:col-start-1">
-                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-slate-700">
-                        <UserRound className="h-3.5 w-3.5" />
+                    {(() => {
+                      const served = pendingCounts[student.studentId]?.adjusted;
+                      if (served == null) return <span className="text-xs text-slate-500">Served history loading…</span>;
+                      return (
+                        <div className="flex shrink-0 items-center gap-3" title={served + " reteaches previously served"} aria-label={served + " previously served; scale of 0 to " + BEHAVIOR_THRESHOLD}>
+                          <span className="text-xs font-medium text-slate-600">Served</span>
+                          <span className="flex gap-1" aria-hidden="true">
+                            {Array.from({ length: BEHAVIOR_THRESHOLD }, (_, index) => (
+                              <span key={index} className={"flex h-6 w-6 items-center justify-center rounded border text-[11px] font-semibold " + (index < served ? "border-[#397A82] bg-[#397A82] text-white" : "border-slate-300 bg-white text-slate-400")}>{index + 1}</span>
+                            ))}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </header>
+                  <div className="divide-y divide-slate-200">
+                    {records.map(record => (
+                      <section key={record.id} aria-label={student.studentName + ": " + record.context + ", " + formatReteachDate(record.reteachDate)} className="p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold">
+                      <span className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1 text-slate-700">
+                        <UserRound className="h-4 w-4 shrink-0" />
                         Assigned by {record.assignedByName || "Unknown"}
                       </span>
-                      <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-slate-700">
-                        <CalendarDays className="h-3.5 w-3.5" />
+                      <span className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1 text-slate-700">
+                        <CalendarDays className="h-4 w-4 shrink-0" />
                         {formatReteachDate(record.reteachDate)}
                       </span>
-                      <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/80 px-2 py-1 text-sky-950">
-                        <MapPin className="h-3.5 w-3.5" />
+                      <span className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-1 text-sky-950">
+                        <MapPin className="h-4 w-4 shrink-0" />
                         {record.location}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50/80 px-2 py-1 text-violet-950">
-                        <Puzzle className="h-3.5 w-3.5" />
-                        {record.context}
                       </span>
                       {record.postThreshold && (
                         <span className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-red-800">
@@ -1378,18 +1389,8 @@ export default function BehaviorWorkspace() {
                         </span>
                       )}
                     </div>
-                    <div className="order-3 mt-1 flex w-full flex-wrap items-stretch gap-2 sm:order-2 sm:row-span-2 sm:mt-0 sm:w-auto sm:shrink-0 sm:items-center sm:justify-end">
-                      {(() => {
-                        const currentCount = pendingCounts[record.studentId]?.adjusted;
-                        const pendingCount = pendingByStudent[record.studentId] || 0;
-                        const thresholdReached = (Number(currentCount) || 0) >= BEHAVIOR_THRESHOLD;
-                        return (
-                          <span className={`inline-flex min-h-12 flex-1 flex-col items-center justify-center rounded-md border px-3 leading-tight sm:flex-none ${reteachCountTone(Number(currentCount) || 0)}`}>
-                            <span className="text-[10px] font-bold uppercase tracking-wide">{thresholdReached ? "Threshold reached" : "Student status"}</span>
-                            <span className="mt-0.5 text-xs font-bold">{Number(currentCount) || 0} Served · {pendingCount} Pending</span>
-                          </span>
-                        );
-                      })()}
+                    <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+
                       <button
                         type="button"
                         onClick={() => handleGenerateReport(record)}
@@ -1408,14 +1409,17 @@ export default function BehaviorWorkspace() {
                         <CheckCircle2 className="h-5 w-5" />
                         {servingIds.includes(record.id) ? "Saving…" : "Mark Served"}
                       </button>
-                      {cancelButton(record)}
+                      {cancelButton(record, true)}
                     </div>
-                  </div>
+                        </div>
                   <div className="mt-3 min-h-12 border-l-4 border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Reteach note</div>
-                    <p className="mt-0.5 text-[15px] leading-6 text-slate-900">{record.note}</p>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-violet-950"><Puzzle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{record.context}</div>
+                    <p className="mt-0.5 whitespace-pre-line text-base leading-6 text-slate-900">{record.note}</p>
                   </div>
-                </div>
+                      </section>
+                    ))}
+                  </div>
+                </article>
               ))}
             </div>
           )}
