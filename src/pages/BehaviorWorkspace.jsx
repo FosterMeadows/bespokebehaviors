@@ -966,7 +966,7 @@ export default function BehaviorWorkspace() {
         <section aria-label="Host reteaches" className="flex flex-col gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-emerald-950">
-              {pending.length} {pending.length === 1 ? "reteach" : "reteaches"} awaiting service
+              {pending.length} {pending.length === 1 ? "Reteach" : "Reteaches"} Awaiting Service
             </h2>
             <p className="mt-1 text-sm leading-6 text-emerald-900">Hosting reteaches today? Open the queue to record service.</p>
           </div>
@@ -975,7 +975,7 @@ export default function BehaviorWorkspace() {
             onClick={() => handleTabChange("serve")}
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 sm:self-auto"
           >
-            Open To Serve <span aria-hidden="true">→</span>
+            View List <span aria-hidden="true">→</span>
           </button>
         </section>
       )}
