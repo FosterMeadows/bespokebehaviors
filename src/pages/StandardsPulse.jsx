@@ -1,6 +1,8 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpenCheck, Layers3, Search } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import { listenPlannerRows } from "../services/planner.js";
+import { mergeWinPulse, winAsSequences } from "../utils/planner.js";
 import { AuthContext } from "../AuthContext.jsx";
 import ela8 from "../data/standards/ela8.json";
 import { listenSequences } from "../services/sequences.js";
@@ -21,6 +23,10 @@ const LEVEL_FILTERS = [
 ];
 
 export default function StandardsPulse() {
+  const [params, setParams] = useSearchParams();
+  const includeWin = params.get("win") === "1";
+  const [weeks, setWeeks] = useState([]);
+  const [winError, setWinError] = useState("");
   const { user } = useContext(AuthContext);
   const [sequences, setSequences] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +50,14 @@ export default function StandardsPulse() {
     );
   }, [user?.uid]);
 
-  const standardsWithState = useMemo(() => buildStandardsPulse(STANDARDS, sequences), [sequences]);
+  useEffect(() => {
+    if (!includeWin) return;
+    return listenPlannerRows(user?.uid, "winWeeks", (rows) => { setWeeks(rows); setWinError(""); }, () => setWinError("WIN coverage could not be loaded."));
+  }, [user?.uid, includeWin]);
+  const standardsWithState = useMemo(() => {
+    const ela = buildStandardsPulse(STANDARDS, sequences);
+    return includeWin ? mergeWinPulse(ela, buildStandardsPulse(STANDARDS, winAsSequences(weeks))) : ela;
+  }, [sequences, weeks, includeWin]);
   const counts = useMemo(() => standardsWithState.reduce((summary, standard) => {
     summary[standard.coverageLevel] = (summary[standard.coverageLevel] || 0) + 1;
     if (standard.needsRevisit) summary.needs_revisit = (summary.needs_revisit || 0) + 1;
@@ -83,6 +96,8 @@ export default function StandardsPulse() {
         </div>
       </header>
 
+      <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={includeWin} onChange={(event) => setParams(event.target.checked ? { win: "1" } : {})} /> Include WIN coverage</label><Link to="/command-center/planner?view=win" className="text-sm font-bold text-violet-700">WIN coverage history</Link></div>
+      {includeWin && winError && <p role="alert" className="text-sm text-red-700">{winError}</p>}
       <section aria-label="Coverage summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {LEVEL_FILTERS.map((option) => {
           const meta = LEVEL_META[option.value];
@@ -101,7 +116,8 @@ export default function StandardsPulse() {
             {visibleStandards.map((standard) => {
               const meta = LEVEL_META[standard.coverageLevel] || LEVEL_META.not_addressed;
               return (
-                <Link key={standard.code} to={`/command-center/standards/${encodeURIComponent(standard.code)}`} className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                <Link key={standard.code} to={`/command-center/standards/${encodeURIComponent(standard.code)}${includeWin ? "?win=1" : ""}`} className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                  {standard.winCount > 0 && <p className="mb-2 text-xs font-bold text-sky-800">WIN practice: {standard.winCount} week{standard.winCount === 1 ? "" : "s"}</p>}
                   <div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-slate-950">{standard.code}</h3><span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ring-1 ${meta.badge}`}>{meta.label}</span>{standard.needsRevisit && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-amber-900 ring-1 ring-amber-200">Needs revisit</span>}</div><p className="mt-2 text-sm leading-6 text-slate-600">{standard.text}</p>{standard.latestSequenceTitle ? <div className="mt-3 text-xs text-slate-500"><span>Latest sequence: {standard.latestSequenceTitle}</span>{standard.latestNote && <span className="ml-3">{standard.latestNote}</span>}</div> : <div className="mt-3 text-xs text-slate-400">No completed sequence has reflected this standard yet.</div>}</div><ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-violet-700" /></div>
                 </Link>
               );

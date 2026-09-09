@@ -10,7 +10,7 @@
     "qa:seed": "node scripts/seed-qa-emulators.mjs",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test tests/access.test.js tests/academicTaskIdentity.test.js tests/behaviorAnalytics.test.js tests/reteachReport.test.js tests/sequenceStandards.test.js tests/studentRosterImport.test.js tests/studentSupports.test.js",
+    "test": "node --test tests/access.test.js tests/academicTaskIdentity.test.js tests/behaviorAnalytics.test.js tests/reteachReport.test.js tests/sequenceStandards.test.js tests/planner.test.js tests/studentRosterImport.test.js tests/studentSupports.test.js",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.js\"",
     "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --audit-level=high",
     "preview": "vite preview"

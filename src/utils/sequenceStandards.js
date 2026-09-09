@@ -30,6 +30,9 @@ export function buildStandardsPulse(standards, sequences) {
       const state = states.get(coverage.standardCode);
       if (!state || !COVERAGE_LEVEL_OPTIONS.some((option) => option.value === coverage.coverageLevel)) return;
       const historyItem = {
+        source: sequence.source || "ela",
+        href: sequence.href || `/command-center/sequences/${sequence.id}`,
+        completedAt: timestampValue(sequence.completedAt || sequence.updatedAt),
         sequenceId: sequence.id,
         sequenceTitle: sequence.title || "Untitled sequence",
         outcome: sequence.outcome || "",

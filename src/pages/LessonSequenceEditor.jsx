@@ -409,6 +409,7 @@ export default function LessonSequenceEditor() {
       <header className="sticky top-[4.5rem] z-30 -mx-2 flex flex-col gap-3 border-b border-slate-200 bg-[#f8f8f6]/95 px-2 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <Link to="/command-center/sequences" className="inline-flex h-10 items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-violet-800"><ArrowLeft className="h-4 w-4" /> Sequences</Link>
         <div className="flex flex-wrap items-center gap-2">
+          <Link to="/command-center/planner" className="inline-flex h-10 items-center rounded-lg border border-violet-300 bg-white px-3 text-sm font-bold text-violet-700">Planner</Link>
           <Link to="/command-center/sequences/active" className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 text-sm font-bold text-violet-700 shadow-sm hover:bg-violet-50"><Play className="h-4 w-4" /> Active View</Link>
           <Link to="/command-center/standards" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"><BookOpenCheck className="h-4 w-4" /> Standards Pulse</Link>
           <div className="inline-flex h-10 rounded-lg border border-slate-300 bg-white p-1 shadow-sm" aria-label="Sequence mode">

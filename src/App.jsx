@@ -33,6 +33,7 @@ import StandardPulseDetail from "./pages/StandardPulseDetail.jsx";
 import LessonSequences from "./pages/LessonSequences.jsx";
 import LessonSequenceEditor from "./pages/LessonSequenceEditor.jsx";
 import ActiveSequence from "./pages/ActiveSequence.jsx";
+import InstructionPlanner from "./pages/InstructionPlanner.jsx";
 import {
   canUseAcademic,
   canUseAdmin,
@@ -142,6 +143,7 @@ export default function App() {
           }
         />
         <Route path="/profile" element={<Account />} />
+        <Route path="/command-center/planner" element={<RequireAccess allowed={commandCenterAllowed} message="The Instruction Planner is available only to the owner."><InstructionPlanner /></RequireAccess>} />
         <Route
           path="/command-center"
           element={

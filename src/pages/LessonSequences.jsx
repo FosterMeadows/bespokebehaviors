@@ -216,6 +216,7 @@ export default function LessonSequences() {
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
+            <Link to="/command-center/planner" className="inline-flex h-10 items-center rounded-lg border border-violet-300 bg-white px-3 text-sm font-bold text-violet-700">Planner</Link>
             <Link to="/command-center/sequences/active" className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 text-sm font-bold text-violet-700 shadow-sm hover:bg-violet-50"><Play className="h-4 w-4" /> Active View</Link>
             <Link to="/command-center/standards" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"><BookOpenCheck className="h-4 w-4" /> Standards Pulse</Link>
             <button type="button" onClick={handleCreate} disabled={working} className="inline-flex h-10 items-center gap-2 rounded-lg bg-violet-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60"><Plus className="h-4 w-4" /> New sequence</button>

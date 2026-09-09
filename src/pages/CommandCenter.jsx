@@ -4,11 +4,21 @@ import {
   BookOpenCheck,
   HeartHandshake,
   Layers3,
+  CalendarDays,
   ShieldCheck,
 } from "lucide-react";
 import { Link } from "react-router";
 
 const MODULES = [
+  {
+    title: "Instruction Planner",
+    description: "Your day and week: current ELA sequence, weekly WIN and IXL practice, Things to Do, and instruction reports.",
+    icon: CalendarDays,
+    to: "/command-center/planner",
+    iconClass: "bg-violet-50 text-violet-700 ring-violet-100",
+    cardClass: "border-violet-200 hover:border-violet-400 focus-visible:ring-violet-500",
+    arrowClass: "group-hover:text-violet-700",
+  },
   {
     title: "Student Supports",
     description: "Keep accommodations, classroom supports, reminders, and student follow-ups close at hand.",

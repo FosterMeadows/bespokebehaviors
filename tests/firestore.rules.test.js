@@ -442,6 +442,18 @@ describe("grade-scoped Firestore rules", () => {
     }));
     await assertSucceeds(getDocs(collection(ownerDb, "teacherCommandCenters", "owner", "sequences")));
 
+    for (const name of ["plannerSettings", "winWeeks", "elaWeeks", "plannerTasks", "instructionEvents", "instructionReports"]) {
+      const path = ["teacherCommandCenters", "owner", name, "planner-test"];
+      await assertSucceeds(setDoc(doc(ownerDb, ...path), { title: "Owner planning record" }));
+      await assertSucceeds(getDoc(doc(ownerDb, ...path)));
+      for (const deniedDb of [adminDb, mtssDb, teacherDb, environment.unauthenticatedContext().firestore()]) {
+        await assertFails(getDoc(doc(deniedDb, ...path)));
+        await assertFails(getDocs(collection(deniedDb, "teacherCommandCenters", "owner", name)));
+        await assertFails(setDoc(doc(deniedDb, ...path), { title: "Denied" }));
+      }
+      await assertFails(setDoc(doc(ownerDb, "teacherCommandCenters", "another-owner", name, "planner-test"), { title: "Wrong owner" }));
+    }
+
     for (const deniedDb of [adminDb, mtssDb, teacherDb]) {
       await assertFails(getDoc(doc(deniedDb, ...standardPath)));
       await assertFails(getDocs(collection(deniedDb, "teacherCommandCenters", "owner", "standards")));

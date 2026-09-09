@@ -81,6 +81,7 @@ export default function ActiveSequence() {
     <div className="mx-auto max-w-4xl space-y-5 pb-10 pt-1">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <Link to="/command-center/sequences" className="inline-flex h-10 items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-violet-800"><ArrowLeft className="h-4 w-4" /> Sequences</Link>
+        <Link to="/command-center/planner" className="inline-flex h-10 items-center rounded-lg border border-violet-300 bg-white px-3 text-sm font-bold text-violet-700">Planner</Link>
         {sequence && <Link to={`/command-center/sequences/${sequence.id}`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"><Layers3 className="h-4 w-4" /> Return to Sequence</Link>}
       </header>
 

@@ -1,4 +1,5 @@
 import { db } from "../firebaseConfig";
+import { dateKey } from "../utils/planner.js";
 import {
   addDoc,
   collection,
@@ -371,18 +372,32 @@ export async function activateSequence(ownerUid, sequenceId, sequence, stepId = 
 }
 
 export async function setStepStatus(ownerUid, sequenceId, sequence, stepId, status) {
+  if (!STEP_STATUSES.has(status) || !sequence.steps.some((step) => step.id === stepId)) throw new Error("Choose a valid step and status.");
   if (status === "active") {
     await activateSequence(ownerUid, sequenceId, sequence, stepId);
     return;
   }
   const clean = cleanSequence(sequence);
   const steps = clean.steps.map((step) => step.id === stepId ? { ...step, status } : step);
-  await updateDoc(sequenceDocument(ownerUid, sequenceId), {
+  const batch = writeBatch(db);
+  const finished = clean.steps.find((step) => step.id === stepId);
+  if (status === "complete" && finished?.status !== "complete") recordInstruction(batch, ownerUid, sequenceId, clean, finished);
+  batch.update(sequenceDocument(ownerUid, sequenceId), {
     ...clean,
     steps,
     activeStepId: clean.activeStepId === stepId ? "" : clean.activeStepId,
     updatedAt: serverTimestamp(),
     updatedByUid: ownerUid,
+  });
+  await batch.commit();
+}
+
+function recordInstruction(batch, ownerUid, sequenceId, sequence, step = null) {
+  const reference = doc(collection(db, "teacherCommandCenters", ownerUid, "instructionEvents"));
+  batch.set(reference, {
+    kind: step ? "step" : "sequence", sequenceId, sequenceTitle: sequence.title,
+    date: dateKey(), recordedAt: serverTimestamp(), outcome: sequence.outcome,
+    ...(step ? { step: { ...step, status: "complete" }, possibleStandards: sequence.possibleStandards } : { standardCoverage: sequence.standardCoverage, reflection: sequence.sequenceReflection }),
   });
 }
 
@@ -396,7 +411,9 @@ async function finishAndAdvance(ownerUid, sequenceId, sequence, finishedStatus) 
     if (step.id === next?.id) return { ...step, status: "active" };
     return step.status === "active" ? { ...step, status: "upcoming" } : step;
   });
-  await updateDoc(sequenceDocument(ownerUid, sequenceId), {
+  const batch = writeBatch(db);
+  if (finishedStatus === "complete") recordInstruction(batch, ownerUid, sequenceId, clean, clean.steps[currentIndex]);
+  batch.update(sequenceDocument(ownerUid, sequenceId), {
     ...clean,
     status: "active",
     steps,
@@ -404,6 +421,7 @@ async function finishAndAdvance(ownerUid, sequenceId, sequence, finishedStatus) 
     updatedAt: serverTimestamp(),
     updatedByUid: ownerUid,
   });
+  await batch.commit();
 }
 
 export function completeAndActivateNext(ownerUid, sequenceId, sequence) {
@@ -419,7 +437,12 @@ export async function completeSequence(ownerUid, sequenceId, sequence) {
   if (!clean.title) throw new Error("Give the sequence a title before completing it.");
   if (!clean.outcome) throw new Error("Describe the expected result before completing the sequence.");
   if (!clean.standardCoverage.length) throw new Error("Select at least one standard covered by this sequence.");
-  await updateDoc(sequenceDocument(ownerUid, sequenceId), {
+  const batch = writeBatch(db);
+  if (clean.status !== "complete") {
+    clean.steps.filter((step) => step.status === "active").forEach((step) => recordInstruction(batch, ownerUid, sequenceId, clean, step));
+    recordInstruction(batch, ownerUid, sequenceId, clean);
+  }
+  batch.update(sequenceDocument(ownerUid, sequenceId), {
     ...clean,
     status: "complete",
     activeStepId: "",
@@ -429,6 +452,7 @@ export async function completeSequence(ownerUid, sequenceId, sequence) {
     updatedAt: serverTimestamp(),
     updatedByUid: ownerUid,
   });
+  await batch.commit();
 }
 
 export async function archiveSequence(ownerUid, sequenceId, sequence) {
