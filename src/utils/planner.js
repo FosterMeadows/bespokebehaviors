@@ -71,52 +71,87 @@ export function mergeWinPulse(ela, win) {
   });
 }
 
-export function instructionReport({ start, end, sequences, events, weeks, standards = [] }) {
+export function instructionReport({ start, end, sequences = [], events = [], weeks = [], standards = [] }) {
   const inRange = (date) => date && date >= start && date <= end;
-  const standardText = (code) => `${code}: ${standards.find((item) => item.code === code)?.text || ""}`;
-  const lines = ["Instruction Record", `${displayDate(start)} - ${displayDate(end)}`, "", "ELA INSTRUCTION", ""];
-  const recorded = events.filter((event) => inRange(event.date)).sort((a, b) => a.date.localeCompare(b.date));
+  const standardText = (code) => `${code}: ${standards.find((item) => item.code === code)?.text || "Description unavailable"}`;
+  const entries = [];
+  const coverage = new Map();
+  const addCoverage = (items, date, title, weekly = false) => {
+    for (const item of items || []) {
+      const evidence = coverage.get(item.standardCode) || [];
+      evidence.push({ ...item, date, title, weekly });
+      coverage.set(item.standardCode, evidence);
+    }
+  };
+  const recorded = events.filter((event) => inRange(event.date) && ["step", "sequence"].includes(event.kind));
   for (const event of recorded) {
-    lines.push(`${displayDate(event.date)} | ${event.sequenceTitle}`, event.kind === "step" ? `Step completed: ${event.step.title}` : "Sequence completed",
-      `Objective: ${event.kind === "step" ? event.step.purpose : event.outcome}`);
+    const lines = [];
     if (event.kind === "step") {
-      (event.step.studentExperience || []).forEach((item) => lines.push(`Activity: ${item.text}`));
+      lines.push(`Step completed: ${event.step.title}`);
+      if (event.step.purpose) lines.push(`Objective: ${event.step.purpose}`);
+      (event.step.studentExperience || []).forEach((item) => {
+        if (item.text) lines.push(`Activity: ${item.text}`);
+        if (safeMaterialsUrl(item.url)) lines.push(`Resource: ${item.url}`);
+      });
       if (event.step.result) lines.push(`Expected result: ${event.step.result}`);
-    }
-    if (event.kind === "sequence") {
-      (event.standardCoverage || []).forEach((item) => lines.push(`${item.coverageLevel}: ${standardText(item.standardCode)}${item.note ? ` — ${item.note}` : ""}`));
+      if (event.possibleStandards?.length) lines.push(`Planning standards (coverage not yet confirmed): ${event.possibleStandards.join(", ")}`);
+    } else {
+      lines.push("Sequence completed");
+      if (event.outcome) lines.push(`Objective: ${event.outcome}`);
+      (event.standardCoverage || []).forEach((item) => lines.push(`Confirmed ${item.coverageLevel}: ${item.standardCode}`));
       if (event.reflection) lines.push(`Reflection: ${event.reflection}`);
-    } else if (event.possibleStandards?.length) {
-      lines.push("Sequence planning standards (coverage confirmed on sequence completion):");
-      event.possibleStandards.forEach((code) => lines.push(standardText(code)));
+      addCoverage(event.standardCoverage, event.date, `ELA: ${event.sequenceTitle}`);
     }
-    lines.push("");
+    entries.push({ date: event.date, title: `ELA | ${event.sequenceTitle}`, lines, order: event.kind === "step" ? 2 : 3, time: event.recordedAt?.seconds || 0 });
   }
   const legacy = sequences.filter((sequence) => inRange(timestampDate(sequence.completedAt)) && !events.some((event) => event.kind === "sequence" && event.sequenceId === sequence.id));
   for (const sequence of legacy) {
-    lines.push(`${displayDate(timestampDate(sequence.completedAt))} | ${sequence.title}`, `Objective: ${sequence.outcome}`, "Historical sequence completion; individual step dates were not recorded.");
-    sequence.steps.filter((step) => step.status === "complete").forEach((step) => lines.push(`Completed step: ${step.title}${step.purpose ? ` — ${step.purpose}` : ""}`));
-    (sequence.standardCoverage || []).forEach((item) => lines.push(`${item.coverageLevel}: ${standardText(item.standardCode)}`));
+    const date = timestampDate(sequence.completedAt);
+    const lines = ["Historical sequence completion; individual step dates were not recorded."];
+    if (sequence.outcome) lines.push(`Objective: ${sequence.outcome}`);
+    (sequence.steps || []).filter((step) => step.status === "complete").forEach((step) => lines.push(`Completed step: ${step.title}${step.purpose ? ` - ${step.purpose}` : ""}`));
     if (sequence.sequenceReflection) lines.push(`Reflection: ${sequence.sequenceReflection}`);
+    entries.push({ date, title: `ELA | ${sequence.title}`, lines, order: 3, time: sequence.completedAt?.seconds || 0 });
+    addCoverage(sequence.standardCoverage, date, `ELA: ${sequence.title}`);
+  }
+  const completed = weeks.filter((week) => week.status === "complete" && inRange(week.week));
+  for (const week of completed) {
+    const lines = [];
+    if (week.materialsUrl) lines.push(`Materials: ${week.materialsUrl}`);
+    if (week.notes?.trim()) lines.push(`Implementation notes: ${week.notes.trim()}`);
+    lines.push(`Practiced: ${(week.standards || []).join(", ")}`);
+    if (week.reflection) lines.push(`Reflection: ${week.reflection}`);
+    entries.push({ date: week.week, weekly: true, title: `WIN | ${week.title}`, lines, order: 0, time: 0 });
+    addCoverage((week.standards || []).map((standardCode) => ({ standardCode, coverageLevel: "practiced" })), week.week, `WIN: ${week.title}`, true);
+  }
+  const skills = assignedSkills(weeks).filter((skill) => inRange(skill.week));
+  for (const skill of skills) entries.push({ date: skill.week, weekly: true, title: `IXL | ${skill.name}`, lines: [`Assigned skill: ${skill.code} (assignment does not confirm completion or mastery)`], order: 1, time: 0 });
+  entries.sort((a, b) => a.date.localeCompare(b.date) || a.time - b.time || a.order - b.order || a.title.localeCompare(b.title));
+  const lines = ["Instruction Record", `${displayDate(start)} - ${displayDate(end)}`, "", "PERIOD OVERVIEW",
+    `${recorded.filter((event) => event.kind === "step").length} dated steps completed | ${recorded.filter((event) => event.kind === "sequence").length + legacy.length} sequences completed`,
+    `${completed.length} WIN weeks completed | ${skills.length} IXL assignments | ${coverage.size} distinct standards with confirmed coverage`,
+    "", "CHRONOLOGICAL INSTRUCTION RECORD",
+    "ELA dates reflect recorded completion. WIN and IXL are weekly records, included by their Monday date.", ""];
+  for (const entry of entries) lines.push(`${entry.weekly ? "Week of " : ""}${displayDate(entry.date)} | ${entry.title}`, ...entry.lines, "");
+  if (!entries.length) lines.push("No instruction records in this date range.", "");
+  lines.push("STANDARDS COVERAGE SUMMARY", "Confirmed coverage within the selected period. Coverage does not establish student mastery.", "");
+  for (const [code, evidence] of [...coverage].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))) {
+    evidence.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+    const levels = [...new Set(evidence.map((item) => item.coverageLevel))];
+    lines.push(standardText(code), `Recorded coverage: ${levels.join(", ")}`,
+      `Summary: ${evidence.filter((item) => !item.weekly).length} ELA sequence completion(s) and ${evidence.filter((item) => item.weekly).length} completed WIN week(s) document this standard.`);
+    for (const item of evidence) lines.push(`- ${item.weekly ? "Week of " : ""}${displayDate(item.date)} | ${item.title} | ${item.coverageLevel}${item.needsRevisit ? " | Revisit needed" : ""}${item.note ? ` - ${item.note}` : ""}`);
     lines.push("");
   }
-  if (!recorded.length && !legacy.length) lines.push("No dated ELA completions in this period.", "");
-  lines.push("WIN INSTRUCTION", "");
-  const completed = weeks.filter((week) => week.status === "complete" && inRange(week.week)).sort((a, b) => a.week.localeCompare(b.week));
-  completed.forEach((week) => {
-    lines.push(`Week of ${displayDate(week.week)} | ${week.title}`);
-    if (week.materialsUrl) lines.push(`Materials: ${week.materialsUrl}`);
-    if (week.notes?.trim()) {
-      lines.push("Implementation Notes:");
-      week.notes.split(/\r?\n/).map((note) => note.trim()).filter(Boolean).forEach((note) => lines.push(`- ${note}`));
-    }
-    week.standards.forEach((code) => lines.push(`Practiced: ${standardText(code)}`));
-    lines.push(`Reflection: ${week.reflection}`, "");
-  });
-  if (!completed.length) lines.push("No completed WIN weeks in this period.", "");
-  lines.push("IXL ASSIGNMENTS", "");
-  const skills = assignedSkills(weeks).filter((skill) => inRange(skill.week));
-  skills.forEach((skill) => lines.push(`${displayDate(skill.week)} | ${skill.name} | ${skill.code}`));
-  if (!skills.length) lines.push("No IXL assignments in this period.");
+  if (!coverage.size) lines.push("No confirmed standards coverage in this date range.");
+  return lines.join("\n");
+}
+
+// Older saved reports are plain text; keep them readable without regeneration.
+export function instructionReportText(report) {
+  const text = report.text || "";
+  if (!report.narrative?.trim()) return text;
+  const lines = text.split("\n");
+  lines.splice(2, 0, "", "NARRATIVE SUMMARY", report.narrative.trim());
   return lines.join("\n");
 }

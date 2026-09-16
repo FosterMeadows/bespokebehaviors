@@ -13,14 +13,15 @@ export async function createInstructionPdf(text) {
   newPage();
   const clean = (value) => value.replace(/[\u2010-\u2015]/g, "-").replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\u2026/g, "...").replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
   for (const raw of text.split("\n")) {
-    const heading = raw === "Instruction Record" || /^(ELA INSTRUCTION|WIN INSTRUCTION|IXL ASSIGNMENTS)$/.test(raw);
-    const size = heading ? 14 : 10;
-    const font = heading ? bold : regular;
+    const heading = raw === "Instruction Record" || /^(ELA INSTRUCTION|WIN INSTRUCTION|IXL ASSIGNMENTS|NARRATIVE SUMMARY|PERIOD OVERVIEW|CHRONOLOGICAL INSTRUCTION RECORD|STANDARDS COVERAGE SUMMARY)$/.test(raw);
+    const entryHeading = / \| (ELA|WIN|IXL) \| /.test(raw);
+    const size = raw === "Instruction Record" ? 22 : heading ? 12 : 10;
+    const font = heading || entryHeading ? bold : regular;
     const lineHeight = heading ? 22 : 15;
-    if (y < (heading ? 95 : 60)) newPage();
+    if (y < (heading || entryHeading ? 125 : 60)) newPage();
     if (!raw) { y -= 10; continue; }
     let line = "";
-    const draw = () => { if (y < 60) newPage(); page.drawText(line, { x: 48, y, size, font, color: rgb(.13, .16, .22) }); y -= lineHeight; line = ""; };
+    const draw = () => { if (y < 60) newPage(); page.drawText(line, { x: 48, y, size, font, color: heading || entryHeading ? rgb(.31, .20, .52) : rgb(.13, .16, .22) }); y -= lineHeight; line = ""; };
     // Character wrapping also handles long Canva links and pasted identifiers.
     for (const character of clean(raw)) {
       if (font.widthOfTextAtSize(line + character, size) > 516) {

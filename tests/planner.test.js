@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mondayOf, addDays, blankWin, validateWin, assignedSkills, winAsSequences, mergeWinPulse, instructionReport } from "../src/utils/planner.js";
+import { mondayOf, addDays, blankWin, validateWin, assignedSkills, winAsSequences, mergeWinPulse, instructionReport, instructionReportText } from "../src/utils/planner.js";
 import { buildStandardsPulse } from "../src/utils/sequenceStandards.js";
 import { createInstructionPdf } from "../src/utils/instructionPdf.js";
 import { PDFDocument } from "pdf-lib";
@@ -49,6 +49,41 @@ describe("instruction planner", () => {
     assert.match(report, /Historical sequence completion/);
     const dated = instructionReport({ ...input, events: [...input.events, { kind: "sequence", sequenceId: "old", sequenceTitle: "Old snapshot", date: "2026-09-02" }] });
     assert.doesNotMatch(dated, /Historical sequence completion/);
+  });
+  it("merges all sources chronologically and summarizes only confirmed coverage", () => {
+    const report = instructionReport({ start: "2026-08-31", end: "2026-09-04", standards, weeks: [week],
+      sequences: [{ id: "legacy", title: "Historical lesson", completedAt: { seconds: new Date("2026-09-01T12:00:00").getTime() / 1000 }, standardCoverage: [] }],
+      events: [
+        { kind: "sequence", sequenceId: "a", sequenceTitle: "Final lesson", date: "2026-09-04", standardCoverage: [{ standardCode: "ELA.8.1", coverageLevel: "assessed", note: "Written evidence", needsRevisit: true }] },
+        { kind: "step", sequenceTitle: "Middle lesson", date: "2026-09-02", step: { title: "Discuss" }, possibleStandards: ["PLANNED.ONLY"] },
+      ] });
+    const timeline = report.split("CHRONOLOGICAL INSTRUCTION RECORD")[1].split("STANDARDS COVERAGE SUMMARY")[0];
+    const labels = ["WIN | Inference", "IXL | Make inferences", "ELA | Historical lesson", "ELA | Middle lesson", "ELA | Final lesson"];
+    for (let i = 1; i < labels.length; i++) assert.ok(timeline.indexOf(labels[i - 1]) < timeline.indexOf(labels[i]));
+    assert.match(timeline, /Week of Aug 31, 2026/);
+    assert.match(report, /1 distinct standards with confirmed coverage/);
+    const summary = report.split("STANDARDS COVERAGE SUMMARY")[1];
+    assert.match(summary, /practiced, assessed/);
+    assert.match(summary, /Written evidence/);
+    assert.match(summary, /Revisit needed/);
+    assert.doesNotMatch(summary, /PLANNED.ONLY/);
+  });
+  it("preserves narratives and old snapshots without changing saved text", () => {
+    const report = { text: "Instruction Record\nDate range\n\nPERIOD OVERVIEW\nDetails", narrative: "  Our focus.\nNext steps.  " };
+    const text = instructionReportText(report);
+    assert.ok(text.indexOf("NARRATIVE SUMMARY") < text.indexOf("PERIOD OVERVIEW"));
+    assert.match(text, /Our focus.\nNext steps./);
+    assert.doesNotMatch(report.text, /NARRATIVE/);
+    assert.equal(instructionReportText({ text: "Old snapshot" }), "Old snapshot");
+    assert.equal(instructionReportText({ text: "Old snapshot", narrative: " " }), "Old snapshot");
+  });
+  it("handles empty and inclusive single-day ranges", () => {
+    const report = instructionReport({ start: "2026-08-31", end: "2026-08-31", weeks: [week], standards });
+    assert.match(report, /1 WIN weeks completed/);
+    assert.match(report, /2 IXL assignments/);
+    const empty = instructionReport({ start: "2026-09-01", end: "2026-09-01", weeks: [week] });
+    assert.match(empty, /No instruction records/);
+    assert.match(empty, /No confirmed standards/);
   });
   it("exports long reports and long links across multiple PDF pages", async () => {
     const text = instructionReport({ start: "2026-08-31", end: "2026-09-04", sequences: [], events: [], weeks: [week], standards });
