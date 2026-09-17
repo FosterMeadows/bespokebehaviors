@@ -63,6 +63,6 @@ Use `npm run qa:emulators` and the existing QA Vite mode. The functions emulator
 - [Firebase callable functions](https://firebase.google.com/docs/functions/callable)
 - [Firebase server secrets](https://firebase.google.com/docs/functions/config-env#secret_parameters)
 
-The backend pins a patched `uuid` version under `gaxios@6.7.1` to address its transitive security advisory. That dependency uses only the compatible `v4()` export; revisit the override when Google updates that dependency.
+The backend pins a patched transitive `uuid` version to address its transitive security advisory. That dependency uses only the compatible `v4()` export; revisit the override when Google updates that dependency.
 
 For result-layout QA, run `node scripts/seed-qa-analysis.mjs` after `qa:seed`. It connects explicitly to the local Firestore emulator, writes clearly labeled synthetic findings, and checks the actual repository cache/lock handling using an injected fake provider. It never calls OpenAI.
