@@ -9,6 +9,7 @@ import {
 import {
   prepareAnalysis,
   validateAnalysis,
+  validateSupportedAnalysis,
 } from "../functions/lib/analysisModel.js";
 import {
   runBehaviorAnalysis,
@@ -152,6 +153,28 @@ function fixture(profile = { roles: ["admin"] }) {
 }
 
 describe("served-note analysis", () => {
+  it("retains supported findings while omitting unsupported quotes, duplicate reviews and teacher citations", () => {
+    const output = structuredClone(modelOutput);
+    output.categoryReviews.push({ ...output.categoryReviews[0] });
+    output.categoryReviews.push({ ...output.categoryReviews[0], recordId: "R2", suggestedCategory: "Disruption", evidence: "Invented quote" });
+    output.teacherPatterns[0].teacherId = "T99";
+    const result = validateSupportedAnalysis(output, prepareAnalysis(records, scope));
+    assert.equal(result.omittedFindings, 3);
+    assert.equal(result.insights.length, 1);
+    assert.equal(result.themes.length, 1);
+    assert.equal(result.categoryReviews.length, 1);
+    assert.equal(result.teacherPatterns.length, 0);
+    assert.ok(!JSON.stringify(result).includes("Invented quote"));
+  });
+
+  it("rejects malformed output and entirely unsupported findings but accepts an honestly empty analysis", () => {
+    const prepared = prepareAnalysis(records, scope);
+    assert.throws(() => validateSupportedAnalysis({ bogus: true }, prepared));
+    const empty = { insights: [], themes: [], categoryReviews: [], teacherPatterns: [] };
+    assert.equal(validateSupportedAnalysis(empty, prepared).omittedFindings, 0);
+    assert.throws(() => validateSupportedAnalysis({ ...empty, insights: [{ text: "Unsupported", recordIds: ["invented", "unknown"] }] }, prepared));
+  });
+
   it("matches dashboard selection, served dates, and explicit local timezone", () => {
     const sample = [
       ...records,

@@ -230,3 +230,34 @@ export function validateAnalysis(output, prepared) {
   });
   return { insights, themes, categoryReviews, teacherPatterns };
 }
+
+// Validate every finding independently. One unsupported suggestion must not hide
+// other verified findings, and rejected evidence must never reach the client.
+export function validateSupportedAnalysis(output, prepared) {
+  const limits = { insights: 4, themes: 8, categoryReviews: 30, teacherPatterns: 12 };
+  const result = { insights: [], themes: [], categoryReviews: [], teacherPatterns: [] };
+  let omittedFindings = 0;
+  const seenReviews = new Set();
+  for (const [kind, limit] of Object.entries(limits)) {
+    if (!Array.isArray(output?.[kind]) || output[kind].length > limit)
+      throw new Error("Invalid analysis shape.");
+    for (const item of output[kind]) {
+      try {
+        const validated = validateAnalysis(
+          { insights: [], themes: [], categoryReviews: [], teacherPatterns: [], [kind]: [item] },
+          prepared,
+        )[kind][0];
+        if (kind === "categoryReviews") {
+          if (seenReviews.has(validated.recordId)) throw new Error("Duplicate review.");
+          seenReviews.add(validated.recordId);
+        }
+        result[kind].push(validated);
+      } catch {
+        omittedFindings += 1;
+      }
+    }
+  }
+  if (omittedFindings && !Object.values(result).some((items) => items.length))
+    throw new Error("No supported findings were returned.");
+  return { ...result, omittedFindings };
+}

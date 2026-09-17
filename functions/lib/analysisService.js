@@ -11,7 +11,7 @@ import {
   ANALYSIS_INSTRUCTIONS,
   ANALYSIS_SCHEMA,
   prepareAnalysis,
-  validateAnalysis,
+  validateSupportedAnalysis,
 } from "./analysisModel.js";
 
 export class AnalysisError extends Error {
@@ -173,7 +173,7 @@ export async function runBehaviorAnalysis({
       model,
       records: prepared.payload,
     });
-    const result = validateAnalysis(output, prepared);
+    const result = validateSupportedAnalysis(output, prepared);
     const final = {
       result,
       scope,

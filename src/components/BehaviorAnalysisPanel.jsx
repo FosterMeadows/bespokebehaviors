@@ -78,6 +78,13 @@ function AnalysisFindings({ saved, recordsById }) {
   const { result } = saved;
   return (
     <div className="mt-5 space-y-6">
+      {result.omittedFindings > 0 && (
+        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">
+          {result.omittedFindings} AI suggestions were excluded because their
+          supporting evidence could not be verified. Only verified findings are
+          shown; this analysis may be incomplete.
+        </p>
+      )}
       <div>
         <h3 className="font-bold text-slate-950">What the notes suggest</h3>
         {result.insights.length ? (
@@ -195,7 +202,7 @@ function AnalysisFindings({ saved, recordsById }) {
           </div>
         ) : (
           <p className="mt-3 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-            No category-review suggestions were returned. This does not
+            No verified category-review suggestions are available. This does not
             establish that every category is correct.
           </p>
         )}
@@ -326,11 +333,11 @@ function AnalysisPanel({ scope, records, title }) {
       })({ filters: scope });
     } catch (failure) {
       setError(
-        failure.code === "functions/not-found" ||
-          failure.code === "functions/internal" ||
-          failure.code === "functions/unavailable"
-          ? "AI analysis could not be reached or completed. Confirm the analysis function is deployed and its server API key is configured, then try again."
-          : failure.message || "Analysis could not be completed. Try again.",
+        failure.code === "functions/not-found"
+          ? "The analysis service could not be reached. Try again shortly."
+          : failure.message === "internal" || failure.message === "INTERNAL"
+            ? "Analysis could not be completed. Try again shortly."
+            : failure.message || "Analysis could not be completed. Try again.",
       );
     } finally {
       setPending(false);
