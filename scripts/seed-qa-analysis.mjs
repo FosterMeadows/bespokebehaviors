@@ -55,6 +55,12 @@ try {
         /Called another student/.test(record.note),
       );
       return {
+        snapshotSummary: [
+          {
+            text: "This snapshot suggests several recurring classroom themes. Synthetic QA example only; these findings are not a real analysis.",
+            recordIds: records.slice(0, 2).map((record) => record.id),
+          },
+        ],
         insights: [
           {
             text: "[QA fixture] Notes describe repeated talking after reminders.",

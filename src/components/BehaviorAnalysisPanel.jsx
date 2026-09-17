@@ -51,7 +51,7 @@ function RecordEvidence({ ids, recordsById, label = "supporting records" }) {
                 Open record
               </Link>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-sm text-slate-600">
               Selected category: {record.context || "Not recorded"} ·{" "}
               {record.location || "Location not recorded"}
             </p>
@@ -98,14 +98,14 @@ function AnalysisFindings({ saved, recordsById }) {
             </article>
           ))
         ) : (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             No supported cross-record summary was returned for this selection.
           </p>
         )}
       </div>
       <div>
         <h3 className="font-bold text-slate-950">Recurring themes</h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Themes may overlap. Counts come from linked records, not estimates.
         </p>
         {result.themes.length ? (
@@ -117,7 +117,7 @@ function AnalysisFindings({ saved, recordsById }) {
               >
                 <h4 className="font-semibold">
                   {theme.title}{" "}
-                  <span className="text-sm font-normal text-slate-500">
+                  <span className="text-sm font-normal text-slate-600">
                     · {theme.recordIds.length} records
                   </span>
                 </h4>
@@ -132,7 +132,7 @@ function AnalysisFindings({ saved, recordsById }) {
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             No recurring theme was identified with enough supporting records.
           </p>
         )}
@@ -141,7 +141,7 @@ function AnalysisFindings({ saved, recordsById }) {
         <h3 className="font-bold text-slate-950">
           Category review · {result.categoryReviews.length} suggestions
         </h3>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Compare what the note describes with the category selected by the
           assigning teacher. These are suggestions for review, not findings of
           error.
@@ -170,19 +170,19 @@ function AnalysisFindings({ saved, recordsById }) {
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">
+                      <p className="text-sm font-bold uppercase text-slate-600">
                         Selected category
                       </p>
                       <p className="mt-1 text-sm">{review.selectedCategory}</p>
                     </div>
                     <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">
+                      <p className="text-sm font-bold uppercase text-slate-600">
                         Possible alternative
                       </p>
                       <p className="mt-1 text-sm">{review.suggestedCategory}</p>
                     </div>
                   </div>
-                  <p className="mt-4 text-xs font-bold uppercase text-slate-500">
+                  <p className="mt-4 text-sm font-bold uppercase text-slate-600">
                     Written reason
                   </p>
                   <blockquote className="mt-1 whitespace-pre-wrap border-l-2 border-amber-300 pl-3 text-sm leading-6">
@@ -192,7 +192,7 @@ function AnalysisFindings({ saved, recordsById }) {
                     <strong>AI observation: </strong>
                     {review.explanation}
                   </p>
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-sm text-slate-600">
                     Supporting excerpt from the redacted note: “
                     {review.evidence}”
                   </p>
@@ -211,7 +211,7 @@ function AnalysisFindings({ saved, recordsById }) {
         <h3 className="font-bold text-slate-950">
           Patterns by assigning teacher
         </h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-sm text-slate-600">
           Each observation requires at least three supporting records from that
           teacher. Differences may reflect teaching context or student
           populations.
@@ -240,7 +240,7 @@ function AnalysisFindings({ saved, recordsById }) {
             );
           })
         ) : (
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-600">
             No teacher-level pattern met the evidence requirement in this
             analysis.
           </p>
@@ -360,9 +360,9 @@ function AnalysisPanel({ scope, records, title }) {
             <span className="block text-base font-bold text-slate-950">
               {title}
             </span>
-            <span className="mt-1 block text-sm text-slate-500">
-              Recurring note themes and possible category differences in this
-              filtered view.
+            <span className="mt-1 block text-sm text-slate-600">
+              A plain-language overview of the notes in this view. Expand for
+              patterns, category suggestions, and supporting records.
             </span>
           </span>
           <ChevronDown
@@ -373,7 +373,7 @@ function AnalysisPanel({ scope, records, title }) {
           type="button"
           disabled={!canAnalyze}
           onClick={analyze}
-          className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 focus:ring-2 focus:ring-violet-400 disabled:bg-slate-200 disabled:text-slate-500"
+          className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 focus:ring-2 focus:ring-violet-400 disabled:bg-slate-200 disabled:text-slate-600"
         >
           {pending || running
             ? "Analyzing…"
@@ -384,7 +384,7 @@ function AnalysisPanel({ scope, records, title }) {
                 : "Analyze this view"}
         </button>
       </div>
-      <div aria-live="polite" className="mt-3 text-xs leading-5 text-slate-500">
+      <div aria-live="polite" className="mt-3 text-sm leading-5 text-slate-600">
         {!loaded
           ? "Checking for saved analysis…"
           : saved?.result
@@ -400,7 +400,7 @@ function AnalysisPanel({ scope, records, title }) {
         </p>
       )}
       {!records.length && (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-slate-600">
           No served reteaches in this view.
         </p>
       )}
@@ -411,6 +411,44 @@ function AnalysisPanel({ scope, records, title }) {
         >
           {error || saved.error}
         </p>
+      )}
+      {current && (
+        <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/60 p-4">
+          <h3 className="font-bold text-slate-950">
+            This snapshot at a glance
+          </h3>
+          {saved.result.snapshotSummary?.length ? (
+            saved.result.snapshotSummary.map((summary, index) => (
+              <div key={index}>
+                <p className="mt-2 text-base leading-7 text-slate-800">
+                  {summary.text}
+                </p>
+                <RecordEvidence
+                  ids={summary.recordIds}
+                  recordsById={recordsById}
+                  label="records supporting this summary"
+                />
+              </div>
+            ))
+          ) : (
+            <p className="mt-2 text-sm text-slate-700">
+              The notes did not support a verified general summary. Expand the
+              analysis to review any individual findings.
+            </p>
+          )}
+          <p className="mt-3 text-sm text-slate-600">
+            Based on {saved.analyzedCount} written notes from{" "}
+            {saved.servedCount} served reteaches. AI describes what was
+            recorded; it does not establish what happened or assess staff
+            performance.
+          </p>
+          {saved.result.omittedFindings > 0 && (
+            <p className="mt-2 text-sm text-amber-900">
+              {saved.result.omittedFindings} suggestions could not be verified
+              and were excluded. Findings may be incomplete.
+            </p>
+          )}
+        </div>
       )}
       {expanded && (
         <>
@@ -426,10 +464,9 @@ function AnalysisPanel({ scope, records, title }) {
               changed. Refresh to review the current notes.
             </p>
           )}
-          {saved?.model && ` · ${saved.model}`}
           {current && (
             <>
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-sm text-slate-600">
                 Excluded notes: {saved.excluded.missingNote} blank ·{" "}
                 {saved.excluded.sensitiveNote} containing out-of-scope sensitive
                 terms · {saved.excluded.longNote} exceeding the note limit.
@@ -447,7 +484,7 @@ function AnalysisPanel({ scope, records, title }) {
 export default function BehaviorAnalysisPanel({
   filters,
   records,
-  title = "Written Reason Analysis",
+  title = "AI snapshot summary",
 }) {
   let scope;
   try {

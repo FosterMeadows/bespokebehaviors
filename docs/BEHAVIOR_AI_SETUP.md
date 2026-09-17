@@ -31,6 +31,7 @@ For key rotation, update the same secret and redeploy the function so the new se
 ## Product behavior
 
 - Loading Analytics reads saved analysis from Firestore; it never calls OpenAI.
+- The AI snapshot summary stays visible above the charts when current findings are available. It is a short synthesis of the filtered notes with supporting record links, not a sentiment score or an inference about feelings, intent, or staff quality. Detailed findings remain expandable. The v3 analysis scope requires a fresh on-demand analysis for the new summary.
 - A button click invokes `analyzeBehaviorReteaches`. Firebase verifies the signed-in user; the function independently checks the current teacher profile for enabled schoolwide access.
 - The client sends filters and a time zone only. The server selects served records itself and ignores client-supplied notes, model names, or prompts.
 - Both schoolwide and teacher-detail analyses respect the current date/grade/teacher/category/location/student filters.

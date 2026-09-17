@@ -66,6 +66,12 @@ const records = [
   },
 ];
 const modelOutput = {
+  snapshotSummary: [
+    {
+      text: "This snapshot suggests recurring difficulty beginning assigned work after reminders.",
+      recordIds: ["R1", "R2", "R3"],
+    },
+  ],
   insights: [
     {
       text: "Several notes describe not beginning work after reminders.",
@@ -153,12 +159,38 @@ function fixture(profile = { roles: ["admin"] }) {
 }
 
 describe("served-note analysis", () => {
+  it("requires real citations for the snapshot summary and supports a single-note snapshot", () => {
+    const output = structuredClone(modelOutput);
+    output.snapshotSummary[0].recordIds = ["invented"];
+    const result = validateSupportedAnalysis(
+      output,
+      prepareAnalysis(records, scope),
+    );
+    assert.equal(result.snapshotSummary.length, 0);
+    assert.equal(result.omittedFindings, 1);
+    output.snapshotSummary = [
+      {
+        text: "This snapshot suggests difficulty starting work in the one supplied note.",
+        recordIds: ["R1"],
+      },
+    ];
+    const single = validateAnalysis(output, prepareAnalysis(records, scope));
+    assert.deepEqual(single.snapshotSummary[0].recordIds, ["actual-1"]);
+  });
   it("retains supported findings while omitting unsupported quotes, duplicate reviews and teacher citations", () => {
     const output = structuredClone(modelOutput);
     output.categoryReviews.push({ ...output.categoryReviews[0] });
-    output.categoryReviews.push({ ...output.categoryReviews[0], recordId: "R2", suggestedCategory: "Disruption", evidence: "Invented quote" });
+    output.categoryReviews.push({
+      ...output.categoryReviews[0],
+      recordId: "R2",
+      suggestedCategory: "Disruption",
+      evidence: "Invented quote",
+    });
     output.teacherPatterns[0].teacherId = "T99";
-    const result = validateSupportedAnalysis(output, prepareAnalysis(records, scope));
+    const result = validateSupportedAnalysis(
+      output,
+      prepareAnalysis(records, scope),
+    );
     assert.equal(result.omittedFindings, 3);
     assert.equal(result.insights.length, 1);
     assert.equal(result.themes.length, 1);
@@ -170,9 +202,25 @@ describe("served-note analysis", () => {
   it("rejects malformed output and entirely unsupported findings but accepts an honestly empty analysis", () => {
     const prepared = prepareAnalysis(records, scope);
     assert.throws(() => validateSupportedAnalysis({ bogus: true }, prepared));
-    const empty = { insights: [], themes: [], categoryReviews: [], teacherPatterns: [] };
+    const empty = {
+      snapshotSummary: [],
+      insights: [],
+      themes: [],
+      categoryReviews: [],
+      teacherPatterns: [],
+    };
     assert.equal(validateSupportedAnalysis(empty, prepared).omittedFindings, 0);
-    assert.throws(() => validateSupportedAnalysis({ ...empty, insights: [{ text: "Unsupported", recordIds: ["invented", "unknown"] }] }, prepared));
+    assert.throws(() =>
+      validateSupportedAnalysis(
+        {
+          ...empty,
+          insights: [
+            { text: "Unsupported", recordIds: ["invented", "unknown"] },
+          ],
+        },
+        prepared,
+      ),
+    );
   });
 
   it("matches dashboard selection, served dates, and explicit local timezone", () => {
@@ -465,6 +513,10 @@ describe("served-note analysis", () => {
     );
     assert.equal(sent.store, false);
     assert.equal(sent.text.format.strict, true);
+    assert.equal(
+      sent.text.format.schema.properties.snapshotSummary.maxItems,
+      1,
+    );
     assert.equal(
       sent.text.format.schema.properties.themes.items.properties.recordIds
         .minItems,

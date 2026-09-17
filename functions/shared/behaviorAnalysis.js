@@ -1,5 +1,5 @@
 // Shared with the browser so cache identity and staleness use the same inputs.
-export const ANALYSIS_VERSION = "served-notes-v2";
+export const ANALYSIS_VERSION = "served-notes-v3";
 export const MAX_ANALYSIS_RECORDS = 500;
 export const CATEGORY_OPTIONS = [
   "Disruption",

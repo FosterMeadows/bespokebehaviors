@@ -26,7 +26,7 @@ function Card({ title, description, children }) {
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-base font-bold text-slate-950">{title}</h2>
       {description && (
-        <p className="mb-4 mt-1 text-sm text-slate-500">{description}</p>
+        <p className="mb-4 mt-1 text-sm text-slate-600">{description}</p>
       )}
       {children}
     </section>
@@ -36,7 +36,7 @@ function Card({ title, description, children }) {
 function Metric({ label, value, detail, onClick }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+      <p className="text-sm font-bold uppercase tracking-wide text-slate-600">
         {label}
       </p>
       <div className="my-2 text-2xl font-bold text-slate-950">
@@ -48,7 +48,7 @@ function Metric({ label, value, detail, onClick }) {
           value
         )}
       </div>
-      <p className="text-xs text-slate-500">{detail}</p>
+      <p className="text-sm text-slate-600">{detail}</p>
     </div>
   );
 }
@@ -84,7 +84,7 @@ function Expandable({ name, title, summary, children }) {
           <span className="block text-base font-bold text-slate-950">
             {title}
           </span>
-          <span className="mt-1 block text-sm text-slate-500">{summary}</span>
+          <span className="mt-1 block text-sm text-slate-600">{summary}</span>
         </span>
         <ChevronDown
           className={`h-5 w-5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
@@ -99,7 +99,7 @@ function Expandable({ name, title, summary, children }) {
 
 function Empty() {
   return (
-    <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+    <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
       No served reteaches match these filters.
     </p>
   );
@@ -133,13 +133,14 @@ function RankedBars({ rows, total, onSelect, kind }) {
               style={{ width: `${(row.count / max) * 100}%` }}
             />
           </span>
-          <span className="block text-xs text-slate-500">
-            {row.uniqueStudents} unique students
+          <span className="block text-sm text-slate-600">
+            {row.uniqueStudents}{" "}
+            {row.uniqueStudents === 1 ? "student" : "students"}
             {kind === "grade"
-              ? ` · ${average(row.average)} reteaches per represented student`
+              ? ` · ${average(row.average)} reteaches per student in this view`
               : kind === "location"
                 ? ` · ${row.teacherCount} assigning staff`
-                : ` · ${Math.round(row.repeatRate)}% repeat students`}
+                : ` · ${row.repeatStudents} of ${row.uniqueStudents} ${row.uniqueStudents === 1 ? "student" : "students"} had multiple reteaches`}
           </span>
         </button>
       ))}
@@ -148,12 +149,15 @@ function RankedBars({ rows, total, onSelect, kind }) {
 }
 
 function Trend({ analytics, interval, onInterval, openHistory }) {
-  const rows = interval === "weekly" ? analytics.weekly : analytics.monthly;
+  const today = dateKey(new Date());
+  const rows = (
+    interval === "weekly" ? analytics.weekly : analytics.monthly
+  ).filter((row) => row.start <= today);
   const max = Math.max(...rows.map((row) => row.count), 1);
   return (
     <Card
       title="Served reteaches over time"
-      description="Served date; weeks begin Monday. Select a period to review its records."
+      description="Based on when reteaches were served, through today. Weeks begin Monday. Select a period to open records."
     >
       <div className="mb-4 flex gap-2" role="group" aria-label="Trend interval">
         {["monthly", "weekly"].map((value) => (
@@ -180,7 +184,7 @@ function Trend({ analytics, interval, onInterval, openHistory }) {
                     month: "short",
                     year: "2-digit",
                   }).format(new Date(`${row.key}-01T00:00:00`));
-            const detail = `${label}: ${row.count} served reteaches, ${row.uniqueStudents} unique students, ${row.teacherCount} assigning staff`;
+            const detail = `${label}: ${row.count} served reteaches, ${row.uniqueStudents} students, ${row.teacherCount} assigning staff`;
             return (
               <button
                 type="button"
@@ -190,15 +194,15 @@ function Trend({ analytics, interval, onInterval, openHistory }) {
                 onClick={() => openHistory({ start: row.start, end: row.end })}
                 className="flex min-w-16 flex-1 flex-col items-center gap-2 rounded px-1 focus:outline-none focus:ring-2 focus:ring-violet-400"
               >
-                <span className="text-xs font-bold">{row.count}</span>
+                <span className="text-sm font-bold">{row.count}</span>
                 <span
                   className="w-full max-w-12 rounded-t bg-violet-500"
                   style={{
                     height: `${row.count ? Math.max(4, (row.count / max) * 130) : 0}px`,
                   }}
                 />
-                <span className="text-[11px] text-slate-600">{label}</span>
-                <span className="text-[10px] text-slate-500">
+                <span className="text-sm text-slate-600">{label}</span>
+                <span className="text-xs text-slate-600">
                   {row.uniqueStudents} students
                   <br />
                   {row.teacherCount} staff
@@ -257,15 +261,15 @@ function TeacherTable({ rows, total, onSelect }) {
   if (!rows.length) return <Empty />;
   const headers = [
     ["name", "Assigning teacher"],
-    ["count", "Served / share"],
-    ["uniqueStudents", "Unique students"],
-    ["average", "Per student"],
+    ["count", "Reteaches / % of total"],
+    ["uniqueStudents", "Students involved"],
+    ["average", "Reteaches per student"],
     ["topCategory", "Top category"],
   ];
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-left text-sm">
-        <thead className="border-b text-xs text-slate-500">
+        <thead className="border-b text-sm text-slate-600">
           <tr>
             {headers.map(([key, label]) => (
               <th
@@ -343,6 +347,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
+  const [moreFilters, setMoreFilters] = useState(false);
   const [interval, setInterval] = useState("monthly");
   const [bucket, setBucket] = useState(null);
   useEffect(() => {
@@ -423,139 +428,182 @@ export default function Analytics() {
       student.value === filters.student ||
       student.label.toLowerCase().includes(studentSearch.toLowerCase()),
   );
+  const selectedPreset =
+    params.get("preset") ||
+    (params.has("start") || params.has("end") ? "custom" : "year");
+  const activeExtras = [
+    filters.teacher &&
+      (options.teachers.find((item) => item.value === filters.teacher)?.label ||
+        "Selected teacher"),
+    filters.context,
+    filters.location,
+    filters.student &&
+      (options.students.find((item) => item.value === filters.student)?.label ||
+        "Selected student"),
+  ].filter(Boolean);
   if (!user) return null;
   return (
     <div className="space-y-5">
       <header className="flex items-center gap-3 border-b border-slate-200 pb-4">
         <BarChart3 className="h-10 w-10 rounded-lg bg-violet-100 p-2 text-violet-700" />
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-violet-800">
+          <p className="text-sm font-bold uppercase tracking-widest text-violet-800">
             Admin Workspace
           </p>
           <h1 className="text-xl font-bold text-slate-950">
             Behavior Analytics
           </h1>
           <p className="text-sm text-slate-600">
-            Understand served reteaches, participation, and repeating patterns.
+            See the school overview, review patterns in the notes, and open the
+            records behind them.
           </p>
         </div>
       </header>
       <section
         aria-label="Analytics filters"
-        className="xl:sticky top-20 z-10 grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3 xl:grid-cols-4"
+        className="sm:sticky top-20 z-10 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
       >
-        <label className="text-sm font-semibold text-slate-700">
-          Date range
-          <select
-            className={inputClass}
-            value={
-              params.get("preset") ||
-              (params.has("start") || params.has("end") ? "custom" : "year")
-            }
-            onChange={(event) => preset(event.target.value)}
-          >
-            <option value="year">This school year</option>
-            <option value="month">This month</option>
-            <option value="30">Last 30 days</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          From
-          <input
-            className={inputClass}
-            type="date"
-            value={filters.start}
-            onChange={(event) =>
-              update({ start: event.target.value, preset: "custom" })
-            }
-          />
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Through
-          <input
-            className={inputClass}
-            type="date"
-            value={filters.end}
-            onChange={(event) =>
-              update({ end: event.target.value, preset: "custom" })
-            }
-          />
-        </label>
-        <SelectFilter
-          label="Grades"
-          value={filters.grade}
-          options={options.grades}
-          onChange={(grade) => update({ grade })}
-        />
-        <SelectFilter
-          label="Assigning teacher"
-          value={filters.teacher}
-          options={options.teachers}
-          onChange={(teacher) => update({ teacher, detailTeacher: null })}
-        />
-        <SelectFilter
-          label="Categories"
-          value={filters.context}
-          options={options.contexts}
-          onChange={(context) => update({ context })}
-        />
-        <SelectFilter
-          label="Locations"
-          value={filters.location}
-          options={options.locations}
-          onChange={(location) => update({ location })}
-        />
-        <div>
-          <label className="text-sm font-semibold text-slate-700">
-            Find student
-            <input
-              type="search"
+        <div className="grid grid-cols-2 items-end gap-3 md:flex">
+          <label className="text-sm font-semibold text-slate-700 md:w-52">
+            Date range
+            <select
               className={inputClass}
-              value={studentSearch}
-              onChange={(event) => setStudentSearch(event.target.value)}
-              placeholder="Search names…"
+              value={selectedPreset}
+              onChange={(event) => preset(event.target.value)}
+            >
+              <option value="year">This school year</option>
+              <option value="month">This month</option>
+              <option value="30">Last 30 days</option>
+              <option value="custom">Custom dates</option>
+            </select>
+          </label>
+          <div className="md:w-40">
+            <SelectFilter
+              label="Grades"
+              value={filters.grade}
+              options={options.grades}
+              onChange={(grade) => update({ grade })}
             />
-          </label>
-          <label className="sr-only" htmlFor="analytics-student">
-            Student
-          </label>
-          <select
-            id="analytics-student"
-            className={inputClass}
-            value={filters.student}
-            onChange={(event) => update({ student: event.target.value })}
-          >
-            <option value="">All students</option>
-            {students.map((student) => (
-              <option key={student.value} value={student.value}>
-                {student.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-xs text-slate-600 sm:col-span-3 xl:col-span-4">
-          <span aria-live="polite">
-            {loading
-              ? "Loading records…"
-              : error
-                ? "Records unavailable"
-                : invalidRange
-                  ? "Choose a valid date range"
-                  : `${analytics.total} served reteaches in current view · ${analytics.uniqueStudents} unique students`}
-          </span>
+          </div>
           <button
-            className={linkClass}
+            type="button"
+            aria-expanded={moreFilters}
+            aria-controls="additional-analytics-filters"
+            className="h-10 rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-800 focus:ring-2 focus:ring-violet-400"
+            onClick={() => setMoreFilters(!moreFilters)}
+          >
+            {moreFilters ? "Hide filters" : "More filters"}
+            {activeExtras.length ? ` (${activeExtras.length})` : ""}
+          </button>
+          <button
+            className={`${linkClass} h-10 text-sm md:ml-auto`}
             onClick={() => {
               setParams({});
               setStudentSearch("");
               setBucket(null);
+              setMoreFilters(false);
             }}
           >
             Reset filters
           </button>
         </div>
+        <p aria-live="polite" className="mt-2 text-sm text-slate-700">
+          {loading
+            ? "Loading records…"
+            : error
+              ? "Records unavailable"
+              : invalidRange
+                ? "Choose a valid date range"
+                : `${analytics.total} served reteaches · ${analytics.uniqueStudents} ${analytics.uniqueStudents === 1 ? "student" : "students"}`}
+          {activeExtras.length > 0 && ` · ${activeExtras.join(" · ")}`}
+          {selectedPreset === "custom" &&
+            ` · ${filters.start || "Any start date"} to ${filters.end || "Any end date"}`}
+        </p>
       </section>
+      {(moreFilters || selectedPreset === "custom") && (
+        <section
+          id="additional-analytics-filters"
+          aria-label="Additional filters"
+          className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {selectedPreset === "custom" && (
+            <>
+              <label className="text-sm font-semibold text-slate-700">
+                From
+                <input
+                  className={inputClass}
+                  type="date"
+                  value={filters.start}
+                  onChange={(event) =>
+                    update({ start: event.target.value, preset: "custom" })
+                  }
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Through
+                <input
+                  className={inputClass}
+                  type="date"
+                  value={filters.end}
+                  onChange={(event) =>
+                    update({ end: event.target.value, preset: "custom" })
+                  }
+                />
+              </label>
+            </>
+          )}
+          {moreFilters && (
+            <>
+              <SelectFilter
+                label="Assigning teacher"
+                value={filters.teacher}
+                options={options.teachers}
+                onChange={(teacher) => update({ teacher, detailTeacher: null })}
+              />
+              <SelectFilter
+                label="Categories"
+                value={filters.context}
+                options={options.contexts}
+                onChange={(context) => update({ context })}
+              />
+              <SelectFilter
+                label="Locations"
+                value={filters.location}
+                options={options.locations}
+                onChange={(location) => update({ location })}
+              />
+              <div>
+                <label className="text-sm font-semibold text-slate-700">
+                  Find student
+                  <input
+                    type="search"
+                    className={inputClass}
+                    value={studentSearch}
+                    onChange={(event) => setStudentSearch(event.target.value)}
+                    placeholder="Search names…"
+                  />
+                </label>
+                <label className="sr-only" htmlFor="analytics-student">
+                  Student
+                </label>
+                <select
+                  id="analytics-student"
+                  className={inputClass}
+                  value={filters.student}
+                  onChange={(event) => update({ student: event.target.value })}
+                >
+                  <option value="">All students</option>
+                  {students.map((student) => (
+                    <option key={student.value} value={student.value}>
+                      {student.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+        </section>
+      )}
       {invalidRange && (
         <p role="alert" className="rounded-lg bg-amber-50 p-4 text-amber-900">
           The start date must be on or before the end date.
@@ -566,7 +614,7 @@ export default function Analytics() {
           {error}
         </p>
       ) : loading ? (
-        <p className="p-8 text-center text-slate-500">
+        <p className="p-8 text-center text-slate-600">
           Loading served reteaches…
         </p>
       ) : invalidRange ? null : (
@@ -579,32 +627,16 @@ export default function Analytics() {
               onClick={() => openHistory()}
             />
             <Metric
-              label="Highest-volume grade"
-              value={analytics.topGrade?.label || "—"}
-              detail={
-                analytics.topGrade
-                  ? `${analytics.topGrade.count} served · ${percent(analytics.topGrade.count, analytics.total)}% of this view`
-                  : "No served records"
-              }
-              onClick={
-                analytics.topGrade
-                  ? () => openHistory({ grade: analytics.topGrade.label })
-                  : undefined
-              }
+              label="Students involved"
+              value={analytics.uniqueStudents}
+              detail="Each student counted once in this view"
+              onClick={() => openHistory()}
             />
             <Metric
-              label="Top location"
-              value={analytics.topLocation?.label || "—"}
-              detail={
-                analytics.topLocation
-                  ? `${analytics.topLocation.count} served · ${percent(analytics.topLocation.count, analytics.total)}% of this view`
-                  : "No served records"
-              }
-              onClick={
-                analytics.topLocation
-                  ? () => openHistory({ location: analytics.topLocation.label })
-                  : undefined
-              }
+              label="Students with multiple reteaches"
+              value={analytics.repeatStudents}
+              detail={`${analytics.repeatStudents} of ${analytics.uniqueStudents} ${analytics.uniqueStudents === 1 ? "student" : "students"} in this view`}
+              onClick={() => openHistory({ repeat: "1" })}
             />
             <Metric
               label="Top behavior category"
@@ -621,6 +653,11 @@ export default function Analytics() {
               }
             />
           </div>
+          <BehaviorAnalysisPanel
+            key={serializedFilters}
+            filters={filters}
+            records={analytics.records}
+          />
           <div className="grid gap-4 xl:grid-cols-2">
             <Card
               title="Served reteaches by grade"
@@ -640,9 +677,34 @@ export default function Analytics() {
               openHistory={openHistory}
             />
           </div>
-          <Card
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card
+              title="Locations that stand out"
+              description="Where the recorded behavior occurred. Select a location to open its records."
+            >
+              <RankedBars
+                rows={analytics.locations}
+                total={analytics.total}
+                kind="location"
+                onSelect={(location) => openHistory({ location })}
+              />
+            </Card>
+            <Card
+              title="Behavior categories that stand out"
+              description="Counts show served reteaches. Repeated reteaches count students with two or more in the same category."
+            >
+              <RankedBars
+                rows={analytics.contexts}
+                total={analytics.total}
+                kind="context"
+                onSelect={(context) => openHistory({ context })}
+              />
+            </Card>
+          </div>
+          <Expandable
+            name="category-grades"
             title="Behavior categories by grade"
-            description="Percentages describe each category’s share of that grade’s served reteaches in this view. Select a cell to review records."
+            summary="Percentages describe each category’s share of that grade’s served reteaches in this view. Select a cell to review records."
           >
             {!analytics.total ? (
               <Empty />
@@ -680,7 +742,7 @@ export default function Analytics() {
                               }
                             >
                               <strong>{cell.count}</strong>
-                              <span className="block text-xs">
+                              <span className="block text-sm">
                                 {Math.round(cell.percent)}%
                               </span>
                             </button>
@@ -692,47 +754,24 @@ export default function Analytics() {
                 </table>
               </div>
             )}
-          </Card>
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card
-              title="Locations that stand out"
-              description="Counts, represented students, and assigning staff."
-            >
-              <RankedBars
-                rows={analytics.locations}
-                total={analytics.total}
-                kind="location"
-                onSelect={(location) => openHistory({ location })}
-              />
-            </Card>
-            <Card
-              title="Behavior categories that stand out"
-              description="Repeat rate: students with multiple served reteaches in that category divided by students represented in that category."
-            >
-              <RankedBars
-                rows={analytics.contexts}
-                total={analytics.total}
-                kind="context"
-                onSelect={(context) => openHistory({ context })}
-              />
-            </Card>
-          </div>
-          <Card
-            title="Teacher reteach activity"
-            description="Served reteaches assigned by each staff member. Counts describe implementation patterns, not staff performance or all assignments. Select a teacher for details."
+          </Expandable>
+          <Expandable
+            name="teachers"
+            title="Explore reteaches by assigning teacher"
+            summary="Open the staff breakdown and select a teacher for details. Counts reflect served reteaches, not staff performance."
           >
             <TeacherTable
               rows={analytics.teachers}
               total={analytics.total}
               onSelect={(teacher) => update({ detailTeacher: teacher })}
             />
-          </Card>
+          </Expandable>
           {detail && (
             <section
               ref={detailRef}
               tabIndex={-1}
               aria-label="Teacher detail"
-              className="space-y-4 rounded-xl border-2 border-violet-200 bg-violet-50 p-4"
+              className="scroll-mt-56 space-y-4 rounded-xl border-2 border-violet-200 bg-violet-50 p-4"
             >
               <div className="flex flex-wrap justify-between gap-2">
                 <h2 className="text-lg font-bold">
@@ -760,13 +799,13 @@ export default function Analytics() {
                   onClick={() => openHistory({ teacher: detailTeacher })}
                 />
                 <Metric
-                  label="Unique students"
+                  label="Students involved"
                   value={detail.uniqueStudents}
-                  detail={`${average(detail.average)} reteaches per represented student`}
+                  detail={`${average(detail.average)} reteaches per student in this view`}
                   onClick={() => openHistory({ teacher: detailTeacher })}
                 />
                 <Metric
-                  label="Repeat students"
+                  label="Students with 2+"
                   value={detail.repeatStudents}
                   detail="More than one in this filtered view"
                   onClick={() =>
@@ -808,7 +847,7 @@ export default function Analytics() {
               </button>
               <BehaviorAnalysisPanel
                 key={`${serializedFilters}:${detailTeacher}`}
-                title="Teacher Written Reason Analysis"
+                title="Teacher AI snapshot summary"
                 filters={{ ...filters, teacher: detailTeacher }}
                 records={detail.records}
               />
@@ -816,26 +855,26 @@ export default function Analytics() {
           )}
           <Expandable
             name="concentration"
-            title="Concentration & Repeats"
-            summary={`${analytics.uniqueStudents} students represented · ${analytics.repeatStudents} with multiple reteaches · ${analytics.teacherCount} assigning staff`}
+            title="Students with repeated reteaches"
+            summary={`${analytics.uniqueStudents} ${analytics.uniqueStudents === 1 ? "student" : "students"} in this view · ${analytics.repeatStudents} with multiple reteaches · ${analytics.teacherCount} assigning staff`}
           >
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric
-                label="Assigning staff represented"
+                label="Assigning staff"
                 value={analytics.teacherCount}
                 detail="Staff with served assignments in this view"
                 onClick={() => openHistory()}
               />
               <Metric
-                label="Top five staff’s share"
+                label="Reteaches assigned by the five most active staff"
                 value={`${percent(analytics.topFiveCount, analytics.total)}%`}
-                detail={`${analytics.topFiveCount} of ${analytics.total} served reteaches`}
+                detail={`${analytics.topFiveCount} of ${analytics.total} served reteaches. Counts depend on role and student contact; this is not a performance measure.`}
                 onClick={() => openHistory({ topStaff: "1" })}
               />
               <Metric
                 label="Students with multiple reteaches"
                 value={analytics.repeatStudents}
-                detail={`${Math.round(analytics.repeatRate)}% of represented students`}
+                detail={`${analytics.repeatStudents} of ${analytics.uniqueStudents} ${analytics.uniqueStudents === 1 ? "student" : "students"} in this view`}
                 onClick={() => openHistory({ repeat: "1" })}
               />
             </div>
@@ -852,7 +891,7 @@ export default function Analytics() {
                   onClick={() => setBucket(bucket === index ? null : index)}
                   className={`rounded-lg border p-4 text-left focus:ring-2 focus:ring-violet-400 ${bucket === index ? "border-violet-400 bg-violet-50" : "border-slate-200"}`}
                 >
-                  <span className="block text-xs font-semibold text-slate-500">
+                  <span className="block text-sm font-semibold text-slate-600">
                     {item.label}
                   </span>
                   <strong className="text-xl">{item.students.length}</strong>
@@ -866,7 +905,7 @@ export default function Analytics() {
                   {analytics.buckets[bucket].label} in this view
                 </h3>
                 {!analytics.buckets[bucket].students.length ? (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-600">
                     No students in this bucket.
                   </p>
                 ) : (
@@ -895,7 +934,7 @@ export default function Analytics() {
                     {[
                       "Category",
                       "Students",
-                      "Repeat students",
+                      "Students with 2+",
                       "Repeat rate",
                       "Records per student",
                     ].map((label) => (
@@ -935,17 +974,12 @@ export default function Analytics() {
               </table>
             </div>
           </Expandable>
-          <BehaviorAnalysisPanel
-            key={serializedFilters}
-            filters={filters}
-            records={analytics.records}
-          />
-          <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+          <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-5 text-slate-600">
             Counts describe served reteach events. Student averages and repeat
-            rates use only students represented in the selected records, not
-            enrollment. Assigning staff counts exclude records without a staff
-            ID. Dates use served date, falling back to reteach date or creation
-            date when unavailable.
+            rates use only students in the selected records, not enrollment.
+            Assigning staff counts exclude records without a staff ID. Dates use
+            served date, falling back to reteach date or creation date when
+            unavailable.
             {analytics.missingStudents > 0 &&
               ` ${analytics.missingStudents} records lack a student ID and are excluded from student counts and averages.`}
           </p>
