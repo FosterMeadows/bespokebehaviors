@@ -15,7 +15,7 @@ import { useSearchParams } from "react-router";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { canUseAdmin } from "../utils/access";
-import { servedRecordDate } from "../utils/behaviorAnalytics.js";
+import { ANALYTICS_FILTER_KEYS, filterBehaviorRecords } from "../utils/behaviorAnalytics.js";
 
 function toDate(value) {
   if (!value) return null;
@@ -295,31 +295,17 @@ export default function HistoryPage() {
     (a, b) => toMillis(b.servedAt || b.reteachDate) - toMillis(a.servedAt || a.reteachDate)
   ), [behaviorRecords]);
 
-  const behaviorFilters = useMemo(() => ({
-    start: searchParams.get("start") || "",
-    end: searchParams.get("end") || "",
-    grade: searchParams.get("grade") || "",
-    location: searchParams.get("location") || "",
-    context: searchParams.get("context") || ""
-  }), [searchParams]);
+  const behaviorFilters = useMemo(() => Object.fromEntries(
+    ANALYTICS_FILTER_KEYS.map(key => [key, searchParams.get(key) || ""])
+  ), [searchParams]);
 
-  const filteredBehavior = useMemo(() => sortedBehavior.filter(record => {
-    const servedDate = servedRecordDate(record);
-    const day = servedDate
-      ? `${servedDate.getFullYear()}-${String(servedDate.getMonth() + 1).padStart(2, "0")}-${String(servedDate.getDate()).padStart(2, "0")}`
-      : "";
-    return (!behaviorFilters.start || day >= behaviorFilters.start)
-      && (!behaviorFilters.end || day <= behaviorFilters.end)
-      && (!behaviorFilters.grade || String(record.grade || "Unknown grade") === behaviorFilters.grade)
-      && (!behaviorFilters.location || String(record.location || "Not recorded") === behaviorFilters.location)
-      && (!behaviorFilters.context || String(record.context || "Not recorded") === behaviorFilters.context);
-  }), [behaviorFilters, sortedBehavior]);
+  const filteredBehavior = useMemo(() => Object.values(behaviorFilters).some(Boolean) ? filterBehaviorRecords(sortedBehavior, behaviorFilters) : sortedBehavior, [behaviorFilters, sortedBehavior]);
 
   const activeBehaviorFilters = Object.entries(behaviorFilters).filter(([, value]) => value);
 
   const clearBehaviorFilters = () => {
     const next = new URLSearchParams(searchParams);
-    ["start", "end", "grade", "location", "context"].forEach(key => next.delete(key));
+    ANALYTICS_FILTER_KEYS.forEach(key => next.delete(key));
     setSearchParams(next);
   };
 
@@ -370,6 +356,11 @@ export default function HistoryPage() {
               {behaviorFilters.grade && <span>Grade {behaviorFilters.grade}</span>}
               {behaviorFilters.location && <span>Location: {behaviorFilters.location}</span>}
               {behaviorFilters.context && <span>Category: {behaviorFilters.context}</span>}
+              {behaviorFilters.teacher && <span>Assigned by: {behaviorFilters.teacher === "__unknown__" ? "Unknown assigning staff" : teachersMap[behaviorFilters.teacher]?.displayName || behaviorRecords.find(record => record.assignedByUid === behaviorFilters.teacher)?.assignedByName || "Staff member"}</span>}
+              {behaviorFilters.student && <span>Student: {studentsMap[behaviorFilters.student]?.displayName || behaviorRecords.find(record => record.studentId === behaviorFilters.student)?.studentName || "Selected student"}</span>}
+              {behaviorFilters.repeat === "1" && <span>Students with multiple served reteaches in this view</span>}
+              {behaviorFilters.topStaff === "1" && <span>Five staff with the most served assignments in this view</span>}
+              <span>{filteredBehavior.length} matching records</span>
               <button type="button" onClick={clearBehaviorFilters} className="ml-auto font-bold text-violet-700 hover:text-violet-950">Clear filters</button>
             </div>
           )}
