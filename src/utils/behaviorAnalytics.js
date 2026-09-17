@@ -59,12 +59,14 @@ export const ANALYTICS_FILTER_KEYS = [
   "student",
   "repeat",
   "topStaff",
+  "record",
 ];
 
 export function filterBehaviorRecords(records, filters = {}) {
   const { start = "", end = "" } = filters;
   let scoped = records.filter((record) => {
     if (record?.status !== "served") return false;
+    if (filters.record && record.id !== filters.record) return false;
     const date = servedRecordDate(record);
     if (!date) return false;
     const day = dateKey(date);

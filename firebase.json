@@ -4,10 +4,22 @@
     "indexes": "firestore.indexes.json"
   },
   "emulators": {
-    "auth": { "host": "127.0.0.1", "port": 9099 },
-    "firestore": { "host": "127.0.0.1", "port": 8080 },
-    "ui": { "enabled": false },
-    "singleProjectMode": true
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
+    "singleProjectMode": true,
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
+    }
   },
   "hosting": {
     "public": "dist",
@@ -17,16 +29,28 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-     
       {
         "source": "/__/auth/**",
         "destination": "/__/auth/handler"
       },
-      
       {
         "source": "**",
         "destination": "/index.html"
       }
     ]
-  }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "behavior-analysis",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log",
+        ".env*",
+        ".secret*"
+      ]
+    }
+  ]
 }

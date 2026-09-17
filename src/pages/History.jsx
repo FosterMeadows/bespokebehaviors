@@ -360,6 +360,7 @@ export default function HistoryPage() {
               {behaviorFilters.student && <span>Student: {studentsMap[behaviorFilters.student]?.displayName || behaviorRecords.find(record => record.studentId === behaviorFilters.student)?.studentName || "Selected student"}</span>}
               {behaviorFilters.repeat === "1" && <span>Students with multiple served reteaches in this view</span>}
               {behaviorFilters.topStaff === "1" && <span>Five staff with the most served assignments in this view</span>}
+              {behaviorFilters.record && <span>Selected reteach record</span>}
               <span>{filteredBehavior.length} matching records</span>
               <button type="button" onClick={clearBehaviorFilters} className="ml-auto font-bold text-violet-700 hover:text-violet-950">Clear filters</button>
             </div>

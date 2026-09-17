@@ -6,13 +6,13 @@
   "scripts": {
     "dev": "vite",
     "dev:qa": "vite --mode qa",
-    "qa:emulators": "firebase emulators:start --only auth,firestore",
+    "qa:emulators": "firebase emulators:start --only auth,firestore,functions",
     "qa:seed": "node scripts/seed-qa-emulators.mjs",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test tests/access.test.js tests/academicTaskIdentity.test.js tests/behaviorAnalytics.test.js tests/reteachReport.test.js tests/sequenceStandards.test.js tests/planner.test.js tests/studentRosterImport.test.js tests/studentSupports.test.js",
+    "test": "node --test tests/access.test.js tests/academicTaskIdentity.test.js tests/behaviorAnalytics.test.js tests/reteachReport.test.js tests/sequenceStandards.test.js tests/planner.test.js tests/studentRosterImport.test.js tests/studentSupports.test.js tests/behaviorAnalysis.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.js\"",
-    "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --audit-level=high",
+    "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --audit-level=high && npm --prefix functions audit --omit=dev --audit-level=high",
     "preview": "vite preview"
   },
   "dependencies": {

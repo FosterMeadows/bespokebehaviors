@@ -847,3 +847,32 @@ describe("grade-scoped Firestore rules", () => {
     await assertFails(getDoc(doc(gradeSixDb, "studentRecordEvents", "behavior-s7")));
   });
 });
+
+describe("AI analysis access", () => {
+  async function seedAnalysis() {
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), "behaviorAnalyses", "saved-analysis"), { result: { themes: [] }, sourceFingerprint: "test" });
+      await setDoc(doc(context.firestore(), "behaviorAnalysisControl", "school"), { dailyAttempts: 1 });
+      await setDoc(doc(context.firestore(), "teachers", "disabledAdmin"), { roles: ["admin"], disabled: true });
+    });
+  }
+
+  it("allows only enabled schoolwide staff to read saved analysis", async () => {
+    await seedAnalysis();
+    for (const uid of ["admin", "owner", "mtss"]) await assertSucceeds(getDoc(doc(environment.authenticatedContext(uid).firestore(), "behaviorAnalyses", "saved-analysis")));
+    for (const uid of ["grade6", "behavior6", "pending", "disabledAdmin"]) await assertFails(getDoc(doc(environment.authenticatedContext(uid).firestore(), "behaviorAnalyses", "saved-analysis")));
+    await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "behaviorAnalyses", "saved-analysis")));
+  });
+
+  it("denies client creation, edits, deletion, and all lock access even to owners", async () => {
+    await seedAnalysis();
+    for (const uid of ["owner", "admin", "behavior6"]) {
+      const db = environment.authenticatedContext(uid).firestore();
+      await assertFails(setDoc(doc(db, "behaviorAnalyses", "fake"), { result: {} }));
+      await assertFails(updateDoc(doc(db, "behaviorAnalyses", "saved-analysis"), { sourceFingerprint: "spoofed" }));
+      await assertFails(deleteDoc(doc(db, "behaviorAnalyses", "saved-analysis")));
+      await assertFails(getDoc(doc(db, "behaviorAnalysisControl", "school")));
+      await assertFails(setDoc(doc(db, "behaviorAnalysisControl", "school"), { dailyAttempts: 0 }));
+    }
+  });
+});

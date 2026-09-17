@@ -36,3 +36,6 @@ tmp/
 *.njsproj
 *.sln
 *.sw?
+
+# Server-only AI credentials
+.secret*

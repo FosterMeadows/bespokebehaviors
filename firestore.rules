@@ -658,6 +658,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // AI results are generated only by the authenticated server function.
+    match /behaviorAnalyses/{analysisId} {
+      allow read: if isSchoolwide();
+      allow write: if false;
+    }
+    match /behaviorAnalysisControl/{document=**} {
+      allow read, write: if false;
+    }
+
     match /app/{document=**} {
       allow read: if signedIn();
       allow write: if isSchoolwide();

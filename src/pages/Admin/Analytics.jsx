@@ -11,6 +11,8 @@ import {
   schoolYearBounds,
 } from "../../utils/behaviorAnalytics.js";
 
+import BehaviorAnalysisPanel from "../../components/BehaviorAnalysisPanel.jsx";
+
 const inputClass =
   "mt-1 block h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-violet-400";
 const linkClass =
@@ -804,6 +806,12 @@ export default function Analytics() {
               >
                 Open this teacher’s records in History
               </button>
+              <BehaviorAnalysisPanel
+                key={`${serializedFilters}:${detailTeacher}`}
+                title="Teacher Written Reason Analysis"
+                filters={{ ...filters, teacher: detailTeacher }}
+                records={detail.records}
+              />
             </section>
           )}
           <Expandable
@@ -927,6 +935,11 @@ export default function Analytics() {
               </table>
             </div>
           </Expandable>
+          <BehaviorAnalysisPanel
+            key={serializedFilters}
+            filters={filters}
+            records={analytics.records}
+          />
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
             Counts describe served reteach events. Student averages and repeat
             rates use only students represented in the selected records, not
