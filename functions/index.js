@@ -17,6 +17,8 @@ const repository = createAnalysisRepository(db);
 export const analyzeBehaviorReteaches = onCall(
   {
     region: "us-central1",
+    // Firebase callable authentication and schoolwide authorization run in the handler.
+    invoker: "public",
     timeoutSeconds: 180,
     memory: "512MiB",
     maxInstances: 2,
