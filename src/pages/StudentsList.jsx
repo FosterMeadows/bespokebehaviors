@@ -284,7 +284,7 @@ function BehaviorRecordCard({ record, user, profile }) {
               <MapPin className="h-3.5 w-3.5" />
               {record.location || "No location"}
             </span>
-            {record.homeContactRequired && record.status !== "cancelled" && <span className="inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-bold uppercase text-amber-800">Home contact required</span>}
+            {record.homeContactRequired && record.status !== "cancelled" && <span className="inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 font-bold text-amber-800">Home Contact Required</span>}
             {record.postThreshold && <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2 py-1 font-bold text-red-800">Assigned after threshold{record.thresholdAcknowledged ? " · acknowledged" : ""}</span>}
             {record.servedPostThreshold && <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2 py-1 font-bold text-red-800">Served after threshold</span>}
           </div>
