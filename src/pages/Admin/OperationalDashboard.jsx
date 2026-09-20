@@ -300,12 +300,12 @@ export default function OperationalDashboard() {
         {errorGroups.length === 0 ? <EmptyState>No production errors have been reported.</EmptyState> : (
           <div className="divide-y divide-slate-200">{errorGroups.map(item => <article key={item.id} className="px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-bold text-slate-950">{item.cause ? ERROR_OPERATIONS[item.operation] || ERROR_OPERATIONS.unknown : "Older error — diagnostic details unavailable"}</h3>
-              <span className={`rounded px-2 py-1 text-xs font-semibold ${item.release === APP_RELEASE ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-600"}`}>{item.release === APP_RELEASE ? "Current build" : "Earlier build"} · {item.count} {item.count === 1 ? "report" : "reports"}</span>
+              <h3 className="font-bold text-slate-950">{item.cause ? ERROR_OPERATIONS[item.operation] || ERROR_OPERATIONS.unknown : "Older error - diagnostic details unavailable"}</h3>
+              <span className={`rounded px-2 py-1 text-xs font-semibold ${item.release === APP_RELEASE ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-600"}`}>{item.release === APP_RELEASE ? "Current build" : "Earlier build"} - {item.count} {item.count === 1 ? "report" : "reports"}</span>
             </div>
             <p className="mt-1 text-sm text-slate-700">{item.cause ? ERROR_CAUSES[item.cause] || ERROR_CAUSES.unknown : "This report predates detailed diagnostics; its original cause cannot be recovered."}</p>
-            <p className="mt-2 text-xs text-slate-600">{item.route} · {item.category} · {[...item.sources].join(", ")} · Build {item.release}</p>
-            <p className="mt-1 text-xs text-slate-500">First in loaded reports: {item.first ? new Date(item.first).toLocaleString() : "Pending"} · Last: {item.last ? new Date(item.last).toLocaleString() : "Pending"}</p>
+            <p className="mt-2 text-xs text-slate-600">{item.route} - {item.category} - {[...item.sources].join(", ")} - Build {item.release}</p>
+            <p className="mt-1 text-xs text-slate-500">First in loaded reports: {item.first ? new Date(item.first).toLocaleString() : "Pending"} - Last: {item.last ? new Date(item.last).toLocaleString() : "Pending"}</p>
             <details className="mt-2 text-sm"><summary className="cursor-pointer font-semibold text-sky-800">Technical details</summary>
               <p className="mt-2 text-xs">Example reference: {item.reference}</p>
               <p className="mt-1 text-xs">Connection at report: {item.online === false ? "Offline" : item.online === true ? "Online" : "Unknown"}</p>
