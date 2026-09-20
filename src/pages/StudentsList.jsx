@@ -426,7 +426,7 @@ function PrintRecord({ title, children }) {
   return <article className="break-inside-avoid rounded border border-slate-300 p-3"><h3 className="font-bold text-slate-950">{title}</h3><dl className="mt-1">{children}</dl></article>;
 }
 
-function StudentPrintReport({ student, schoolYear, academicRecords, behaviorRecords, attendance, sessions, contacts, buybacks, events, generatedBy }) {
+function StudentPrintReport({ student, schoolYear, academicRecords, behaviorRecords, attendance, sessions, contacts, buybacks, generatedBy }) {
   return (
     <div className="student-history-print-root print-only bg-white text-slate-950">
       <header className="border-b-2 border-slate-900 pb-3">
@@ -486,10 +486,6 @@ function StudentPrintReport({ student, schoolYear, academicRecords, behaviorReco
         </div>
       </section>
 
-      <section className="mt-5">
-        <h2 className="mb-2 text-lg font-bold">Record change history ({events.length})</h2>
-        <div className="space-y-2">{events.length ? events.map(item => <PrintRecord key={item.id} title={item.summary || formatStatusLabel(item.eventType)}><PrintRow label="Date">{formatRecordDate(item.occurredAt)}</PrintRow><PrintRow label="Domain">{formatStatusLabel(item.domain)}</PrintRow><PrintRow label="Recorded by">{item.actorName || "Staff Member"}</PrintRow></PrintRecord>) : <p className="text-sm text-slate-500">No durable change events recorded.</p>}</div>
-      </section>
     </div>
   );
 }
@@ -838,7 +834,6 @@ export default function StudentsList() {
             sessions={selectedHasAcademicAccess ? filteredSessions : []}
             contacts={filteredContacts}
             buybacks={selectedHasFullBehaviorHistory ? filteredBuybacks : []}
-            events={filteredEvents}
             generatedBy={profile?.displayName || user?.displayName || user?.email}
           />
         </>
