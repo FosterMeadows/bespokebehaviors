@@ -86,6 +86,7 @@ export default function OperationalDashboard() {
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState([]);
   const [clientErrors, setClientErrors] = useState([]);
+  const [showAllErrors, setShowAllErrors] = useState(false);
 
   useEffect(() => {
     const subscriptions = canViewHomeContacts
@@ -298,7 +299,7 @@ export default function OperationalDashboard() {
 
       <Panel title="Recent Application Errors" description="Grouped from the latest 200 reports, independently of the reporting window above. Counts exclude duplicate signals suppressed within 30 seconds. Raw error messages and student content are not stored.">
         {errorGroups.length === 0 ? <EmptyState>No production errors have been reported.</EmptyState> : (
-          <div className="divide-y divide-slate-200">{errorGroups.map(item => <article key={item.id} className="px-5 py-4">
+          <div id="recent-application-errors" className="divide-y divide-slate-200">{(showAllErrors ? errorGroups : errorGroups.slice(0, 3)).map(item => <article key={item.id} className="px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-bold text-slate-950">{item.cause ? ERROR_OPERATIONS[item.operation] || ERROR_OPERATIONS.unknown : "Older error - diagnostic details unavailable"}</h3>
               <span className={`rounded px-2 py-1 text-xs font-semibold ${item.release === APP_RELEASE ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-600"}`}>{item.release === APP_RELEASE ? "Current build" : "Earlier build"} - {item.count} {item.count === 1 ? "report" : "reports"}</span>
@@ -313,6 +314,11 @@ export default function OperationalDashboard() {
             </details>
           </article>)}</div>
         )}
+        {errorGroups.length > 3 && <div className="border-t border-slate-200 px-5 py-3">
+          <button type="button" aria-expanded={showAllErrors} aria-controls="recent-application-errors" onClick={() => setShowAllErrors(current => !current)} className="rounded px-2 py-1 text-sm font-semibold text-sky-800 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
+            {showAllErrors ? "Show only the 3 most recent" : `Show all ${errorGroups.length} error groups`}
+          </button>
+        </div>}
       </Panel>
 
       <p className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
