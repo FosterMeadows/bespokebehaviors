@@ -342,7 +342,7 @@ service cloud.firestore {
         && request.resource.data.userUid == request.auth.uid
         && request.resource.data.keys().hasOnly([
           "reference", "userUid", "route", "source", "category",
-          "release", "online", "userAgent", "occurredAt"
+          "release", "online", "userAgent", "occurredAt", "cause", "operation", "codeLocation"
         ])
         && request.resource.data.reference is string
         && request.resource.data.reference.size() <= 20
@@ -351,7 +351,12 @@ service cloud.firestore {
         && request.resource.data.source is string
         && request.resource.data.source.size() <= 80
         && request.resource.data.category is string
-        && request.resource.data.category.size() <= 80;
+        && request.resource.data.category.size() <= 80
+        && request.resource.data.get('cause', 'unknown') in ['permission', 'index', 'network', 'authentication', 'timeout', 'resource', 'conflict', 'javascript', 'unknown']
+        && request.resource.data.get('operation', 'unknown') in ['unknown', 'behavior-prepare', 'behavior-count', 'behavior-create', 'behavior-serve', 'behavior-undo', 'behavior-pdf', 'behavior-contact']
+        && request.resource.data.get('codeLocation', '') is string
+        && request.resource.data.get('codeLocation', '').size() <= 500
+        && request.resource.data.get('codeLocation', '').matches('^(/assets/[A-Za-z0-9_-]+[.]js:[0-9]+:[0-9]+( [|] /assets/[A-Za-z0-9_-]+[.]js:[0-9]+:[0-9]+){0,2})?$');
       allow update: if false;
       allow delete: if isOwner();
     }

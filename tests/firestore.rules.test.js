@@ -359,6 +359,12 @@ describe("grade-scoped Firestore rules", () => {
     };
 
     await assertSucceeds(setDoc(doc(pendingDb, "clientErrors", "safe"), safeError));
+    const diagnostic = { ...safeError, cause: "permission", operation: "behavior-count", codeLocation: "/assets/index-Abc123.js:12:34 | /assets/index-Abc123.js:56:78" };
+    await assertSucceeds(setDoc(doc(pendingDb, "clientErrors", "diagnostic"), diagnostic));
+    for (const field of ["cause", "operation", "codeLocation"]) {
+      await assertFails(setDoc(doc(pendingDb, "clientErrors", `unsafe-${field}`), { ...diagnostic, [field]: "Student Jane Doe" }));
+    }
+
     await assertFails(setDoc(doc(pendingDb, "clientErrors", "raw-message"), {
       ...safeError,
       message: "Student Jane Doe failed assignment 4"

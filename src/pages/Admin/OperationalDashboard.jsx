@@ -1,3 +1,4 @@
+import { ERROR_CAUSES, ERROR_OPERATIONS, groupClientErrors } from "../../utils/errorDiagnostics.js";
 import { useContext, useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -112,7 +113,7 @@ export default function OperationalDashboard() {
   }, [canViewHomeContacts]);
 
   useEffect(() => onSnapshot(
-    query(collection(db, "clientErrors"), orderBy("occurredAt", "desc"), limit(50)),
+    query(collection(db, "clientErrors"), orderBy("occurredAt", "desc"), limit(200)),
     snapshot => setClientErrors(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))),
     error => {
       setErrors(current => current.includes("clientErrors") ? current : [...current, "clientErrors"]);
@@ -120,6 +121,7 @@ export default function OperationalDashboard() {
     }
   ), []);
 
+  const errorGroups = useMemo(() => groupClientErrors(clientErrors), [clientErrors]);
   const metrics = useMemo(() => buildOperationalMetrics({ ...data, days }), [data, days]);
   const maxGradeItems = Math.max(1, ...metrics.gradeWorkload.map(row => row.academicItems + row.behaviorItems));
 
@@ -294,9 +296,22 @@ export default function OperationalDashboard() {
         </div>
       </Panel>
 
-      <Panel title="Recent Application Errors" description="Privacy-safe technical signals from the most recent production errors. Student names, notes, and form contents are never collected here.">
-        {clientErrors.length === 0 ? <EmptyState>No production errors have been reported.</EmptyState> : (
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Reference</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">Release</th><th className="px-5 py-3 text-right">Time</th></tr></thead><tbody className="divide-y divide-slate-100">{clientErrors.slice(0, 20).map(item => <tr key={item.id}><td className="px-5 py-3 font-bold text-red-800">{item.reference}</td><td className="px-3 py-3 text-slate-700">{item.source} Â· {item.category}</td><td className="px-3 py-3 text-slate-600">{item.route}</td><td className="px-3 py-3 text-slate-600">{item.release}</td><td className="px-5 py-3 text-right text-slate-500">{item.occurredAt?.toDate?.().toLocaleString() || "Pending"}</td></tr>)}</tbody></table></div>
+      <Panel title="Recent Application Errors" description="Grouped from the latest 200 reports, independently of the reporting window above. Counts exclude duplicate signals suppressed within 30 seconds. Raw error messages and student content are not stored.">
+        {errorGroups.length === 0 ? <EmptyState>No production errors have been reported.</EmptyState> : (
+          <div className="divide-y divide-slate-200">{errorGroups.map(item => <article key={item.id} className="px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-bold text-slate-950">{item.cause ? ERROR_OPERATIONS[item.operation] || ERROR_OPERATIONS.unknown : "Older error — diagnostic details unavailable"}</h3>
+              <span className={`rounded px-2 py-1 text-xs font-semibold ${item.release === APP_RELEASE ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-600"}`}>{item.release === APP_RELEASE ? "Current build" : "Earlier build"} · {item.count} {item.count === 1 ? "report" : "reports"}</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-700">{item.cause ? ERROR_CAUSES[item.cause] || ERROR_CAUSES.unknown : "This report predates detailed diagnostics; its original cause cannot be recovered."}</p>
+            <p className="mt-2 text-xs text-slate-600">{item.route} · {item.category} · {[...item.sources].join(", ")} · Build {item.release}</p>
+            <p className="mt-1 text-xs text-slate-500">First in loaded reports: {item.first ? new Date(item.first).toLocaleString() : "Pending"} · Last: {item.last ? new Date(item.last).toLocaleString() : "Pending"}</p>
+            <details className="mt-2 text-sm"><summary className="cursor-pointer font-semibold text-sky-800">Technical details</summary>
+              <p className="mt-2 text-xs">Example reference: {item.reference}</p>
+              <p className="mt-1 text-xs">Connection at report: {item.online === false ? "Offline" : item.online === true ? "Online" : "Unknown"}</p>
+              <p className="mt-1 break-all font-mono text-xs">{item.codeLocation || "No application stack coordinates were available."}</p>
+            </details>
+          </article>)}</div>
         )}
       </Panel>
 

@@ -2,7 +2,10 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
 import { APP_RELEASE } from "../utils/release";
 
+import { errorDiagnostics, diagnosticKey } from "../utils/errorDiagnostics.js";
+
 const recentReports = new Map();
+const reportedErrors = new WeakMap();
 
 function safeToken(value, fallback = "unknown", limit = 80) {
   const cleaned = String(value || fallback).replace(/[^a-zA-Z0-9_./:-]/g, "-").slice(0, limit);
@@ -26,17 +29,21 @@ function safeRoute() {
   }).join("/").slice(0, 160) || "/";
 }
 
-export async function reportClientError(error, { source = "application" } = {}) {
+export async function reportClientError(error, { source = "application", operation = "unknown" } = {}) {
   const user = auth.currentUser;
   if (!user?.uid || import.meta.env.DEV) return "";
 
-  const category = safeToken(error?.code || error?.name || typeof error, "error");
+  const diagnostics = errorDiagnostics(error, operation, window.location.origin);
+  const isObject = error && typeof error === "object";
+  if (isObject && Date.now() - (reportedErrors.get(error) || 0) < 30_000) return "";
   const safeSource = safeToken(source, "application");
   const route = safeRoute();
-  const fingerprint = `${user.uid}:${route}:${safeSource}:${category}`;
+  const fingerprint = `${user.uid}:${diagnosticKey({ ...diagnostics, route, release: APP_RELEASE })}`;
   const now = Date.now();
   if (now - (recentReports.get(fingerprint) || 0) < 30_000) return "";
   recentReports.set(fingerprint, now);
+  if (isObject) reportedErrors.set(error, now);
+  for (const [key, time] of recentReports) if (now - time > 30_000) recentReports.delete(key);
 
   const reference = referenceId();
   try {
@@ -45,7 +52,7 @@ export async function reportClientError(error, { source = "application" } = {}) 
       userUid: user.uid,
       route,
       source: safeSource,
-      category,
+      ...diagnostics,
       release: APP_RELEASE,
       online: navigator.onLine,
       userAgent: String(navigator.userAgent || "unknown").slice(0, 240),

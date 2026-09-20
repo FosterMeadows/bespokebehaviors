@@ -1,3 +1,4 @@
+import { reportClientError } from "../services/clientErrors";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardCheck, Download, MapPin, PhoneCall, Puzzle, Search, Undo2, UserRound, X } from "lucide-react";
 import { AuthContext } from "../AuthContext.jsx";
@@ -372,6 +373,7 @@ export default function BehaviorWorkspace() {
         try {
           await ensureBehaviorReteachSummaries();
         } catch (err) {
+          void reportClientError(err, { source: "operation", operation: "behavior-prepare" });
           if (!cancelled) setError(`Could not prepare behavior snapshots: ${err.message}`);
         }
       }
@@ -472,6 +474,7 @@ export default function BehaviorWorkspace() {
         );
         if (!ignore) setPendingCounts(Object.fromEntries(entries));
       } catch (err) {
+        void reportClientError(err, { source: "operation", operation: "behavior-count" });
         if (!ignore) setError(`Could not load reteach counts: ${err.message}`);
       }
     }
@@ -498,6 +501,7 @@ export default function BehaviorWorkspace() {
           : await getBehaviorServedCount(selectedStudent.id);
         if (!ignore) setServedCount(count);
       } catch (err) {
+        void reportClientError(err, { source: "operation", operation: "behavior-count" });
         if (!ignore) setError(`Could not load served count: ${err.message}`);
       } finally {
         if (!ignore) setCountLoading(false);
@@ -642,6 +646,7 @@ export default function BehaviorWorkspace() {
         : await getBehaviorServedCount(selectedStudent.id);
       setServedCount(countAtSubmission);
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-count" });
       setError(`Could not verify the student reteach count: ${err.message}`);
       setSubmitting(false);
       return;
@@ -702,6 +707,7 @@ export default function BehaviorWorkspace() {
       clearForm();
       setActiveTab("serve");
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-create" });
       setError(`Could not create behavior reteach: ${err.message}`);
     } finally {
       setSubmitting(false);
@@ -797,6 +803,7 @@ export default function BehaviorWorkspace() {
       setMessage(`${record.studentName} marked served.`);
       setUndoRecord(record);
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-serve" });
       setError(`Could not mark served: ${err.message}`);
     } finally {
       setServingIds((ids) => ids.filter((id) => id !== record.id));
@@ -810,6 +817,7 @@ export default function BehaviorWorkspace() {
     try {
       await downloadReteachReport(record);
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-pdf" });
       setError(`Could not generate report: ${err.message}`);
     } finally {
       setGeneratingReportIds((ids) => ids.filter((id) => id !== record.id));
@@ -860,6 +868,7 @@ export default function BehaviorWorkspace() {
       setMessage(`${undoRecord.studentName} returned to To Serve.`);
       setUndoRecord(null);
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-undo" });
       setError(`Could not undo served status: ${err.message}`);
     } finally {
       setUndoing(false);
@@ -877,6 +886,7 @@ export default function BehaviorWorkspace() {
       setEditingHomeContactId(null);
       setMessage(`Home contact attempt recorded for ${requirement.studentName}.`);
     } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-contact" });
       setError(`Could not record home contact: ${err.message}`);
     } finally {
       setContactSaving(false);
