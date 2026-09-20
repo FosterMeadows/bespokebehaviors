@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardCheck, Download, MapPin, PhoneCall, Puzzle, Search, Undo2, UserRound, X } from "lucide-react";
 import { AuthContext } from "../AuthContext.jsx";
 import HomeContactForm from "../components/HomeContactForm.jsx";
+import BehaviorStudentStats from "../components/BehaviorStudentStats.jsx";
 import CancelReteachDialog from "../components/CancelReteachDialog.jsx";
 import ReteachCancellationDetails from "../components/ReteachCancellationDetails.jsx";
 import {
@@ -907,6 +908,9 @@ export default function BehaviorWorkspace() {
             My Reteaches
             {pendingHomeContacts.length > 0 && <TabCount active={activeTab === "mine"} attention>{pendingHomeContacts.length}</TabCount>}
           </TabButton>
+          <div className="ml-auto shrink-0 pl-5 sm:pl-10">
+            <TabButton active={activeTab === "stats"} onClick={() => handleTabChange("stats")}>Student Stats</TabButton>
+          </div>
         </div>
       </header>
 
@@ -1274,6 +1278,8 @@ export default function BehaviorWorkspace() {
             <StudentSummary key={selectedStudent.id} student={selectedStudent} count={servedCount} pendingCount={selectedPendingCount} loading={countLoading} />
           )}
         </form>
+      ) : activeTab === "stats" ? (
+        <BehaviorStudentStats students={students} profile={profile} devCounts={isDevOwner ? devCounts : null} />
       ) : activeTab === "serve" ? (
         <section className="space-y-4">
           <div className="sticky top-20 z-20 border-b border-slate-200 bg-white p-3">

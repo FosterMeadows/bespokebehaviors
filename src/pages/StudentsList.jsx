@@ -1,10 +1,11 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { BadgeMinus, BookOpenCheck, CalendarDays, CheckCircle2, ClipboardList, History, MapPin, PhoneCall, Printer, Search, ShieldCheck, UserRound } from "lucide-react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { AuthContext } from "../AuthContext.jsx";
 import ReteachCancellationDetails from "../components/ReteachCancellationDetails.jsx";
 import { db } from "../firebaseConfig";
-import { behaviorSchoolYear, getBehaviorServedCount, listenBehaviorAssignmentStudents, normalizeStudent, recordBehaviorBuyback } from "../services/behavior";
+import { BEHAVIOR_THRESHOLD, behaviorSchoolYear, getBehaviorServedCount, listenBehaviorAssignmentStudents, normalizeStudent, recordBehaviorBuyback } from "../services/behavior";
 import { canOverrideBehaviorThreshold, canUseAcademic, canUseBehavior, getAllowedGradeLevels, isSchoolwide } from "../utils/access";
 import {
   formatAcademicStatus,
@@ -90,6 +91,7 @@ function TabButton({ active, children, icon: Icon, onClick, tone }) {
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
         active ? `bg-white shadow-sm ${toneClasses}` : "text-slate-600 hover:bg-white/70 hover:text-slate-900 focus:ring-violet-400"
       }`}
@@ -141,39 +143,38 @@ function StudentSearch({ queryText, onQueryChange, suggestions, onSelect }) {
 
 function StudentHeader({ student, activeTab, academicCount, behaviorCount, onTabChange, onClear, onPrint, printingDisabled }) {
   return (
-    <section className="rounded-lg border border-violet-200 bg-gradient-to-r from-violet-50/50 via-white to-violet-50/50 p-3 shadow-md shadow-slate-200/40">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-800 ring-1 ring-violet-200">
             {student.displayName?.trim()?.charAt(0)?.toUpperCase() || "S"}
           </div>
           <div>
-            <div className="text-xs font-bold uppercase tracking-wide text-violet-700">Student Record</div>
-            <h1 className="mt-0.5 text-xl font-bold text-slate-950">{student.displayName}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{student.displayName}</h1>
             <div className="mt-0.5 text-sm font-semibold text-slate-500">
               Grade {student.grade || "-"}{student.homeroom ? ` • ${student.homeroom}` : " • Homeroom"}
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="no-print grid grid-cols-1 gap-2 sm:grid-cols-[auto_auto] lg:shrink-0">
           <button
             type="button"
             onClick={onPrint}
             disabled={printingDisabled}
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-violet-700 px-3 text-sm font-semibold text-white hover:bg-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Printer className="h-4 w-4" />Print / Save PDF
+            <Printer className="h-4 w-4 shrink-0" />Create Student Report PDF
           </button>
           <button
             type="button"
             onClick={onClear}
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-violet-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-400"
+            className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-400"
           >
             Change Student
           </button>
         </div>
       </div>
-      <div className="mt-3 inline-flex gap-1 rounded-md border border-slate-200 bg-slate-50/70 p-0.5">
+      <div className="mt-5 flex gap-2 border-t border-slate-100 pt-4">
         <TabButton tone="academic" icon={BookOpenCheck} active={activeTab === "academic"} onClick={() => onTabChange("academic")}>
           Academic ({academicCount})
         </TabButton>
@@ -182,6 +183,21 @@ function StudentHeader({ student, activeTab, academicCount, behaviorCount, onTab
         </TabButton>
       </div>
     </section>
+  );
+}
+
+function HistoryHeading({ title, count, schoolYear, schoolYears, onSchoolYearChange }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3">
+      <h2 className="text-base font-bold text-slate-950">{title} <span className="font-normal text-slate-500">· {count} {count === 1 ? "record" : "records"}</span></h2>
+      <label className="no-print">
+        <span className="sr-only">School Year</span>
+        <select value={schoolYear} onChange={event => onSchoolYearChange(event.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-400">
+          <option value="all">All School Years</option>
+          {schoolYears.map(year => <option key={year} value={year}>{year}</option>)}
+        </select>
+      </label>
+    </div>
   );
 }
 
@@ -248,26 +264,23 @@ function BehaviorRecordCard({ record, user, profile }) {
     : record.reteachDate || record.createdAt || record.servedAt;
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4">
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-bold text-slate-950">{record.context || "Behavior reteach"}</h3>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold">
-            <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-slate-700">
+          <p className="mb-1 text-xs font-semibold text-slate-500">{isServed ? "Served " : "Scheduled "}{formatRecordDate(recordDate)}</p>
+          <h3 className="text-lg font-bold text-slate-950">{record.context || "Behavior reteach"}</h3>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600">
+            <span className="inline-flex items-center gap-1.5">
               <UserRound className="h-3.5 w-3.5" />
               Assigned by {record.assignedByName || "Unknown Teacher"}
             </span>
-            <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 text-slate-700">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {isServed ? "Served " : "Scheduled "}{formatRecordDate(recordDate)}
-            </span>
             {isServed && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/80 px-2 py-1 text-emerald-800">
+              <span className="inline-flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Served by {servedByName}
               </span>
             )}
-            <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/80 px-2 py-1 text-sky-950">
+            <span className="inline-flex items-center gap-1.5">
               <MapPin className="h-3.5 w-3.5" />
               {record.location || "No location"}
             </span>
@@ -276,14 +289,13 @@ function BehaviorRecordCard({ record, user, profile }) {
             {record.servedPostThreshold && <span className="inline-flex rounded-md border border-red-200 bg-red-50 px-2 py-1 font-bold text-red-800">Served after threshold</span>}
           </div>
         </div>
-        <span className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${record.status === "cancelled" ? "border-red-200 bg-red-50 text-red-800" : isServed ? "border-slate-200 bg-slate-50/70 text-slate-500" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+        {!isServed && <span className={`rounded-md border px-2.5 py-1 text-xs font-bold ${record.status === "cancelled" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           {formatStatusLabel(record.status)}
-        </span>
+        </span>}
       </div>
       {record.note && (
-        <div className="mt-3 border-l-4 border-slate-200 bg-slate-50 px-3 py-2.5">
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Reteach Note</div>
-          <p className="mt-0.5 text-[15px] leading-6 text-slate-900">{record.note}</p>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="whitespace-pre-line text-[15px] leading-6 text-slate-700">{record.note}</p>
         </div>
       )}
       <ReteachCancellationDetails record={record} />
@@ -295,19 +307,19 @@ function BehaviorStanding({ standing, canRecord, confirming, saving, onConfirm, 
   const served = standing?.served || 0;
   const buybacks = standing?.buybacks || 0;
   const adjusted = standing?.adjusted || 0;
+  const maxed = adjusted >= BEHAVIOR_THRESHOLD;
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <section className={`rounded-xl border p-5 ${maxed ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/40"}`}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Behavior Standing</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-extrabold text-emerald-950 shadow-sm ring-1 ring-emerald-100">{adjusted} Current Count</span>
-            <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">{served} Served</span>
-            <span className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">{buybacks} {buybacks === 1 ? "Buyback" : "Buybacks"}</span>
+          <div className="text-xs font-bold uppercase tracking-wide text-slate-600">Behavior Standing · {behaviorSchoolYear()}</div>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <span className={`text-4xl font-bold tracking-tight ${maxed ? "text-amber-950" : "text-emerald-950"}`}>{adjusted}</span>
+            <div><div className="text-sm font-bold text-slate-900">Current Count {maxed && <span className="ml-2 rounded-md bg-amber-200 px-2 py-1 text-xs text-amber-950">Maxed</span>}</div><div className="mt-1 text-sm text-slate-600">{served} served · {buybacks} {buybacks === 1 ? "buyback" : "buybacks"}</div></div>
           </div>
         </div>
         {canRecord && !confirming && (
-          <button type="button" onClick={onConfirm} disabled={adjusted <= 0} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <button type="button" onClick={onConfirm} disabled={adjusted <= 0} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
             <BadgeMinus className="h-4 w-4" />Record Buyback
           </button>
         )}
@@ -319,12 +331,12 @@ function BehaviorStanding({ standing, canRecord, confirming, saving, onConfirm, 
         )}
       </div>
       {standing?.buybackRecords?.length > 0 && (
-        <div className="mt-4 border-t border-slate-200 pt-3">
-          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Buyback History</div>
+        <details className="mt-4 border-t border-slate-200 pt-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">Buyback History ({standing.buybackRecords.length})</summary>
           <div className="mt-2 flex flex-wrap gap-2">
             {standing.buybackRecords.map(item => <span key={item.id} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-900"><CalendarDays className="h-3.5 w-3.5" />{formatRecordDate(item.buybackDate)} · {item.recordedByName || "Staff Member"}</span>)}
           </div>
-        </div>
+        </details>
       )}
     </section>
   );
@@ -340,12 +352,12 @@ function recordSchoolYear(record) {
 
 function DetailSection({ icon: Icon, title, empty, children }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-sm font-bold text-slate-900">
-        {React.createElement(Icon, { className: "h-4 w-4 text-violet-600", "aria-hidden": true })}{title}
-      </div>
-      <div className="mt-3 space-y-2">{children || <p className="text-sm text-slate-500">{empty}</p>}</div>
-    </section>
+    <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="cursor-pointer rounded text-sm font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+        {React.createElement(Icon, { className: "mx-2 inline h-4 w-4 text-slate-400", "aria-hidden": true })}{title}
+      </summary>
+      <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">{React.Children.count(children) ? children : <p className="text-sm text-slate-500">{empty}</p>}</div>
+    </details>
   );
 }
 
@@ -484,6 +496,7 @@ function StudentPrintReport({ student, schoolYear, academicRecords, behaviorReco
 
 export default function StudentsList() {
   const { user, profile } = useContext(AuthContext);
+  const [searchParams, setSearchParams] = useSearchParams();
   const isDevOwner = user?.uid === "dev-owner";
   const canRecordBuyback = isDevOwner || canOverrideBehaviorThreshold(profile);
   const [students, setStudents] = useState(isDevOwner ? MOCK_STUDENTS : []);
@@ -526,6 +539,18 @@ export default function StudentsList() {
       (err) => setError(`Could not load students: ${err.message}`)
     );
   }, [isDevOwner, profile]);
+
+  useEffect(() => {
+    const studentId = searchParams.get("studentId");
+    if (!studentId) return;
+    const student = students.find(item => item.id === studentId);
+    if (!student) return;
+    const normalized = normalizeStudent(student);
+    setSelectedStudent(normalized);
+    setQueryText(normalized.displayName);
+    setActiveTab(searchParams.get("tab") === "behavior" ? "behavior" : "academic");
+    setConfirmingBuyback(false);
+  }, [searchParams, students]);
 
   useEffect(() => {
     let ignore = false;
@@ -679,6 +704,7 @@ export default function StudentsList() {
   const behaviorEvents = filteredEvents.filter(item => item.domain === "behavior");
 
   function selectStudent(student) {
+    setSearchParams({}, { replace: true });
     const normalized = normalizeStudent(student);
     setSelectedStudent(normalized);
     setQueryText(normalized.displayName);
@@ -690,6 +716,7 @@ export default function StudentsList() {
   }
 
   function clearStudent() {
+    setSearchParams({}, { replace: true });
     setSelectedStudent(null);
     setQueryText("");
     setAcademicRecords([]);
@@ -736,22 +763,7 @@ export default function StudentsList() {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-700 shadow-sm ring-1 ring-violet-200">
-            <UserRound className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[0.12em] text-violet-800">Student History</div>
-            <div className="mt-0.5 text-sm text-slate-600">Search student records and review intervention history.</div>
-          </div>
-        </div>
-        <div className="text-xs font-semibold text-slate-500">
-          {students.length} {students.length === 1 ? "student" : "students"} available
-        </div>
-      </header>
-
+    <div className="mx-auto max-w-6xl space-y-5 pb-10 pt-3">
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
           {error}
@@ -780,21 +792,12 @@ export default function StudentsList() {
             printingDisabled={recordsLoading}
           />
 
-          <div className="no-print flex justify-end">
-            <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-              Report scope
-              <select value={schoolYearFilter} onChange={event => setSchoolYearFilter(event.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-700">
-                <option value="all">All retained years</option>
-                {schoolYears.map(year => <option key={year} value={year}>{year}</option>)}
-              </select>
-            </label>
-          </div>
-
           {recordsLoading ? (
             <EmptyPanel>Loading student records...</EmptyPanel>
           ) : activeTab === "academic" ? (
             !selectedHasAcademicAccess ? <EmptyPanel>Academic history is outside your student access scope.</EmptyPanel> : (
               <div className="space-y-3">
+                <HistoryHeading title="Academic History" count={filteredAcademic.length} schoolYear={schoolYearFilter} schoolYears={schoolYears} onSchoolYearChange={setSchoolYearFilter} />
                 {filteredAcademic.length === 0 ? <EmptyPanel>No academic reteach records found in this report scope.</EmptyPanel> : (
                   <div className="space-y-2.5">{filteredAcademic.map((record) => <AcademicRecordCard key={record.id} record={record} user={user} profile={profile} />)}</div>
                 )}
@@ -814,6 +817,8 @@ export default function StudentsList() {
                   onRecord={handleRecordBuyback}
                 />}
               {!selectedHasFullBehaviorHistory && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">This student is outside your assigned grades. Only behavior records you created are shown.</div>}
+              <div className="space-y-3">
+              <HistoryHeading title="Behavior History" count={filteredBehavior.length} schoolYear={schoolYearFilter} schoolYears={schoolYears} onSchoolYearChange={setSchoolYearFilter} />
               {filteredBehavior.length === 0 ? <EmptyPanel>No behavior reteach records found in this report scope.</EmptyPanel> : (
                 <div className="space-y-2.5">
                   {filteredBehavior.map((record) => <BehaviorRecordCard key={record.id} record={record} user={user} profile={profile} />)}
@@ -821,6 +826,7 @@ export default function StudentsList() {
               )}
               <HomeContactHistory contacts={filteredContacts} />
               <EventHistory events={behaviorEvents} />
+              </div>
             </div>
           )}
           <StudentPrintReport

@@ -1,5 +1,34 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { buildBehaviorStudentStats, filterBehaviorStudentStats } from "../src/utils/behaviorStudentStats.js";
+
+describe("student stats", () => {
+  const students = [
+    { id: "a", displayName: "Amy", grade: "6", homeroom: "B", behaviorBuybacks: 2 },
+    { id: "b", displayName: "Ben", grade: "7", homeroom: "A" },
+    { id: "c", displayName: "Cam", grade: "6", active: false },
+    { id: "d", displayName: "Dee", grade: "6" }
+  ];
+  const served = (studentId, extra = {}) => ({ studentId, status: "served", reteachDate: "2026-09-01", ...extra });
+  const records = [served("a"), served("a", { assignedByUid: "another-teacher", grade: "5" }),
+    served("a", { status: "pending" }), served("a", { status: "cancelled" }),
+    served("a", { reteachDate: "2025-09-01" }), served("b"), served("c")];
+  it("counts current-year service across teachers using current assigned grades, before buybacks", () => {
+    const result = buildBehaviorStudentStats(students, records, { roles: ["behavior"], gradeLevels: [6] }, "2026-2027");
+    assert.deepEqual(result.map(row => [row.id, row.served]), [["a", 2]]);
+    assert.deepEqual(buildBehaviorStudentStats(students, records, { roles: ["behavior"] }, "2026-2027"), []);
+    assert.deepEqual(buildBehaviorStudentStats(students, records, { roles: ["owner"], disabled: true }, "2026-2027"), []);
+    assert.equal(buildBehaviorStudentStats(students, records, { roles: ["admin"] }, "2026-2027").length, 2);
+  });
+  it("supports multiple grades, count sorting, name sorting, and combined filters", () => {
+    const rows = buildBehaviorStudentStats(students, records, { roles: ["behavior"], gradeLevels: [6, 7] }, "2026-2027");
+    assert.deepEqual(filterBehaviorStudentStats(rows, { sort: "least" }).map(row => row.id), ["b", "a"]);
+    assert.deepEqual(filterBehaviorStudentStats(rows, { sort: "most" }).map(row => row.id), ["a", "b"]);
+    assert.deepEqual(filterBehaviorStudentStats(rows, { sort: "student-desc" }).map(row => row.id), ["b", "a"]);
+    assert.deepEqual(filterBehaviorStudentStats(rows, { grade: "6", search: " AM " }).map(row => row.id), ["a"]);
+    assert.deepEqual(filterBehaviorStudentStats(rows, { sort: "homeroom" }).map(row => row.id), ["b", "a"]);
+  });
+});
 import {
   analyticsOptions,
   buildBehaviorAnalytics,

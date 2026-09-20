@@ -302,6 +302,14 @@ export function listenMyBehaviorReteaches(userId, onRows, onError) {
   );
 }
 
+export function listenServedBehaviorSummaries(onRows, onError) {
+  return onSnapshot(
+    query(collection(db, "behaviorReteachSummaries"), where("status", "==", "served")),
+    snap => onRows(snap.docs.map(item => ({ id: item.id, ...item.data() }))),
+    onError
+  );
+}
+
 export function listenMyHomeContactRequirements(userId, onRows, onError) {
   if (!userId) {
     onRows([]);
