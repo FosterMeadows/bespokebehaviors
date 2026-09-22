@@ -690,8 +690,8 @@ export default function AcademicDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-3 px-4 py-6">
-      {/* Header */}
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Planning and roster-management navigation */}
+      {mode !== "live" && <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-100 text-sky-700 shadow-sm ring-1 ring-sky-200">
             <BookOpenCheck className="h-5 w-5" aria-hidden="true" />
@@ -714,9 +714,9 @@ export default function AcademicDashboard() {
             </button>
           )}
         </div>
-      </header>
+      </header>}
 
-      {availableLanes.length > 1 && <nav className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2" aria-label="Academic session lanes">
+      {mode !== "live" && availableLanes.length > 1 && <nav className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2" aria-label="Academic session lanes">
         {availableLanes.map(lane => {
           const laneSession = laneSessions[lane.id];
           const isSelected = lane.id === activeLane.id;
@@ -754,7 +754,7 @@ export default function AcademicDashboard() {
           );
         })}
       </nav>}
-      {activeLane.grade === "6" && (
+      {mode !== "live" && activeLane.grade === "6" && (
         <p className="text-xs text-slate-600">Grade 6 North and South share the work backlog. Each lane has its own session roster.</p>
       )}
 
@@ -792,6 +792,7 @@ export default function AcademicDashboard() {
           currentUser={user}
           readOnly={isDevOwner}
           onConfirm={requestConfirmation}
+          onManageRoster={() => setMode("setup")}
           onMarkAllPresent={handleBulkMarkPresent}
           onEndSession={handleEndSession}
           onMarkPresent={handleMarkPresent}
@@ -1606,6 +1607,7 @@ function LiveGrid({
   currentUser,
   readOnly,
   onConfirm,
+  onManageRoster,
   onMarkAllPresent,
   onEndSession,
   onMarkPresent,
@@ -1675,7 +1677,12 @@ function LiveGrid({
     <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-slate-950">{laneLabel} Session</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-base font-bold text-slate-950">{laneLabel} Session</h2>
+            <button type="button" onClick={onManageRoster} className="text-xs font-semibold text-sky-800 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-400">
+              Manage roster &amp; lanes
+            </button>
+          </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800">
               {presentCount} / {deckItems.length} Present
