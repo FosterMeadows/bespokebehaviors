@@ -1745,12 +1745,12 @@ function LiveGrid({
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.5fr)]">
-          <section aria-label="Session students" className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50/70">
+          <section aria-label="Session students" className="min-w-0 self-start overflow-hidden rounded-lg border border-slate-200 bg-slate-50/70">
             <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5">
               <h3 className="text-sm font-bold text-slate-900">Students</h3>
               <span className="text-xs font-semibold text-slate-500">{deckItems.length} on roster</span>
             </div>
-            <ul className="max-h-72 divide-y divide-slate-200 overflow-y-auto lg:max-h-[calc(100vh-22rem)]">
+            <ul className="divide-y divide-slate-200">
               {deckItems.map(sid => {
                 const student = studentsMap[sid] || {};
                 const activeTasks = tasks.filter(task =>
