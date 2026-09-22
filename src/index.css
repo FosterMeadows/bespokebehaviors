@@ -67,7 +67,7 @@ select:not([multiple]):not([data-native-chevron]) {
 }
 
 .academic-step-in {
-  animation: behavior-step-in 180ms ease-out;
+  animation: behavior-step-in 150ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
