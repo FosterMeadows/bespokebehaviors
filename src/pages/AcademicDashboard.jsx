@@ -1273,9 +1273,9 @@ function OnDeckPanel({
 }) {
   const [copyState, setCopyState] = useState("idle");
   const [rosterExpanded, setRosterExpanded] = useState(false);
+  const rosterId = useId();
   const copyTimerRef = useRef(null);
   const deckNames = deckItems.map((sid) => studentsMap[sid]?.displayName || sid);
-  const visibleDeckItems = rosterExpanded ? deckItems : deckItems.slice(0, 4);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
@@ -1294,15 +1294,23 @@ function OnDeckPanel({
   };
 
   return (
-    <section className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-4 shadow-sm">
+    <section className="rounded-lg border border-sky-200 bg-sky-50/40 px-4 py-3 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="text-base font-bold text-slate-950">{laneLabel} — {sessionIsLive ? "Live Roster" : "Selected Students"}</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {deckItems.length} {deckItems.length === 1 ? "student" : "students"} {sessionIsLive ? "in the session" : "selected"}
-          </p>
+          <span className="text-sm text-slate-600">{deckItems.length} {deckItems.length === 1 ? "student" : "students"}</span>
+          {sessionIsLive && <span className="text-xs font-medium text-emerald-800">Roster changes apply immediately</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRosterExpanded(current => !current)}
+            aria-expanded={rosterExpanded}
+            aria-controls={rosterId}
+            className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold text-sky-800 hover:bg-sky-100 hover:text-sky-950 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          >
+            {rosterExpanded ? "Hide students" : `Show ${deckItems.length} students`}
+          </button>
           <button
             type="button"
             onClick={copyNames}
@@ -1323,20 +1331,9 @@ function OnDeckPanel({
         </div>
       </div>
 
-      {sessionIsLive && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          This session is live. Adding or removing a student here updates the live roster immediately.
-        </p>
-      )}
-
-      {deckItems.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
-          <div className="text-sm font-semibold text-slate-800">No students selected.</div>
-          <div className="mt-1 text-sm text-slate-500">Use “Add to Session” in the Academic Backlog.</div>
-        </div>
-      ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {visibleDeckItems.map((sid) => {
+      {rosterExpanded && (
+        <div id={rosterId} className="mt-3 grid grid-cols-1 gap-2 border-t border-sky-200 pt-3 sm:grid-cols-2 xl:grid-cols-4">
+          {deckItems.map((sid) => {
             const student = studentsMap[sid] || {};
             const name = student.displayName || sid;
             const detail = formatStudentDetail(student.grade, student.homeroom);
@@ -1374,16 +1371,6 @@ function OnDeckPanel({
             );
           })}
         </div>
-      )}
-      {deckItems.length > 4 && (
-        <button
-          type="button"
-          onClick={() => setRosterExpanded(current => !current)}
-          aria-expanded={rosterExpanded}
-          className="text-sm font-semibold text-sky-800 hover:text-sky-950 focus:outline-none focus:ring-2 focus:ring-sky-400"
-        >
-          {rosterExpanded ? "Show fewer students" : `Show all ${deckItems.length} students`}
-        </button>
       )}
     </section>
   );
