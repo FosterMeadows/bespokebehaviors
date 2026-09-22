@@ -1,5 +1,5 @@
 import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import { BookOpenCheck, Check, Copy, Search, Undo2, X } from "lucide-react";
+import { BookOpenCheck, Check, ChevronRight, Copy, Search, Undo2, X } from "lucide-react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import {
@@ -1745,7 +1745,7 @@ function LiveGrid({
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.5fr)]">
-          <section aria-label="Session students" className="min-w-0 self-start rounded-lg border border-slate-200 bg-slate-50/70">
+          <section aria-label="Session students" className="min-w-0 self-start overflow-hidden rounded-lg border border-slate-200 bg-slate-50/70">
             <div className="flex items-center justify-between rounded-t-lg border-b border-slate-200 px-3 py-2.5">
               <h3 className="text-sm font-bold text-slate-900">Students</h3>
               <span className="text-xs font-semibold text-slate-500">{deckItems.length} on roster</span>
@@ -1759,14 +1759,17 @@ function LiveGrid({
                 const selected = sid === selectedStudentId;
                 const present = !!attendanceToday[sid];
                 return (
-                  <li key={sid} className={`relative flex items-center gap-2 border-l-4 p-2 last:rounded-b-lg ${selected ? "z-10 border-l-sky-600 bg-sky-100/80 ring-1 ring-inset ring-sky-200 after:absolute after:-right-3 after:top-1/2 after:-translate-y-1/2 after:border-y-[8px] after:border-l-[12px] after:border-y-transparent after:border-l-sky-600 after:content-[''] lg:after:block after:hidden" : "border-l-transparent bg-white"}`}>
+                  <li key={sid} className={`flex items-center gap-2 border-l-4 p-2 last:rounded-b-lg ${selected ? "border-l-sky-600 bg-sky-100/80 ring-1 ring-inset ring-sky-200" : "border-l-transparent bg-white"}`}>
                     <button
                       type="button"
                       aria-pressed={selected}
                       onClick={() => { setSelectedStudentId(sid); setWorkError(""); }}
                       className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${selected ? "text-sky-950" : "text-slate-900 hover:bg-slate-50"}`}
                     >
-                      <span className="block truncate text-sm font-bold">{student.displayName || sid}</span>
+                      <span className="flex items-center gap-1 text-sm font-bold">
+                        <span className="min-w-0 truncate">{student.displayName || sid}</span>
+                        {selected && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-sky-700" aria-hidden="true" />}
+                      </span>
                       <span className="block truncate text-xs text-slate-500">
                         {student.homeroom || `Grade ${student.grade || ""}`} · {activeTasks.length} {activeTasks.length === 1 ? "assignment" : "assignments"}
                       </span>
