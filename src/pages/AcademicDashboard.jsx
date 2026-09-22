@@ -1205,7 +1205,7 @@ function BacklogStudentRow({
   const oldestWorkAge = formatOldestWorkAge(tasks);
 
   return (
-    <article className="relative grid min-h-24 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-4 py-3 transition last:border-b-0 hover:bg-sky-50/40">
+    <article className="relative grid min-h-24 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-4 py-3 transition last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(7.5rem,0.7fr)_auto]">
       <button
         type="button"
         onClick={onOpen}
@@ -1218,16 +1218,12 @@ function BacklogStudentRow({
         <div className="min-w-0">
           <div className="truncate text-[15px] font-bold leading-tight text-slate-950">{name}</div>
           <div className="mt-0.5 truncate text-xs font-medium text-slate-500">{studentDetail || "Student"}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-medium text-slate-500">
-            <span>{days} {days === 1 ? "Day" : "Days"} Served</span>
-            <span>{oldestWorkAge}</span>
-          </div>
         </div>
       </div>
 
-      <div className="pointer-events-none relative z-10 col-start-1 row-start-2 grid w-max grid-cols-2 gap-1.5 pl-10">
+      <div className="pointer-events-none relative z-10 col-start-1 row-start-2 flex min-w-0 flex-wrap gap-1.5 xl:col-start-2 xl:row-start-1">
         {subjectEntries.slice(0, 4).map(([subject, count]) => (
-          <span key={subject} className={`inline-flex h-7 w-32 items-center justify-between gap-1 rounded-md border px-2 text-xs font-semibold ${getSubjectTone(subject)}`}>
+          <span key={subject} className={`inline-flex h-7 min-w-28 items-center justify-between gap-2 rounded-md border px-2 text-xs font-semibold ${getSubjectTone(subject)}`}>
             {formatSubjectLabel(subject)} <span className="ml-1.5 font-bold opacity-80">{count}</span>
           </span>
         ))}
@@ -1236,7 +1232,12 @@ function BacklogStudentRow({
         )}
       </div>
 
-      <div className="relative z-20 col-start-2 row-span-2 row-start-1 flex self-center justify-end">
+      <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-medium text-slate-600 xl:col-start-3 xl:row-start-1 xl:flex-col xl:gap-y-1">
+        <span>{oldestWorkAge}</span>
+        <span>{days} {days === 1 ? "Day" : "Days"} Served</span>
+      </div>
+
+      <div className="relative z-20 col-start-2 row-span-3 row-start-1 flex self-center justify-end xl:col-start-4 xl:row-span-1">
         {staged ? (
           <button
             type="button"
