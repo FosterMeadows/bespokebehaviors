@@ -1205,7 +1205,7 @@ function BacklogStudentRow({
   const oldestWorkAge = formatOldestWorkAge(tasks);
 
   return (
-    <article className="relative grid min-h-24 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-4 py-3 transition last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(9rem,0.75fr)_auto]">
+    <article className="relative grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 transition last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(9rem,0.75fr)_auto]">
       <button
         type="button"
         onClick={onOpen}
@@ -1229,8 +1229,8 @@ function BacklogStudentRow({
         )}
       </div>
 
-      <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs xl:col-start-3 xl:row-start-1 xl:flex-col xl:items-start">
-        <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">{oldestWorkAge}</span>
+      <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex w-fit flex-col gap-0.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs xl:col-start-3 xl:row-start-1">
+        <span className="font-semibold text-slate-700">{oldestWorkAge}</span>
         <span className="font-medium text-slate-500">{days} {days === 1 ? "Day" : "Days"} Served</span>
       </div>
 
