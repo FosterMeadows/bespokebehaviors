@@ -1722,22 +1722,6 @@ function LiveGrid({
         </div>
       </div>
 
-      {deckItems.length > 0 && (
-        <div
-          className="h-1.5 overflow-hidden rounded-full bg-slate-100"
-          role="progressbar"
-          aria-label="Session Attendance"
-          aria-valuemin={0}
-          aria-valuemax={deckItems.length}
-          aria-valuenow={presentCount}
-        >
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
-            style={{ width: `${(presentCount / deckItems.length) * 100}%` }}
-          />
-        </div>
-      )}
-
       {deckItems.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
           <div className="text-sm font-semibold text-slate-800">No Students On Deck</div>
