@@ -9,7 +9,7 @@ import {
 
 import {
   addTasks, MAX_TASK_BATCH_SIZE,
-  ensureTodayDeck, addToDeck, removeFromDeck,
+  addToDeck, removeFromDeck,
   recordTodayAcademicAttendance, undoTodayAcademicAttendance, updateTaskState, archiveCompletedTask,
   addStudentToTodayAcademicSession, endTodayAcademicSession,
   listenTodayAcademicSession,
@@ -29,13 +29,14 @@ import { formatSubjectLabel, getSubjectBorderTone, getSubjectTone } from "../uti
 // AcademicDashboard — Setup (strip + add + waiting list) and Live (wrapping grid)
 // -------------------------------------------------
 
-function WorkspaceStatus({ mode, count, hostName = "" }) {
+function WorkspaceStatus({ mode, count, hostName = "", sessionIsLive = false, sessionReady = true }) {
+  const label = !sessionReady ? "Loading Session" : mode === "live" ? "Session In Progress" : sessionIsLive ? "Managing Live Roster" : "Planning";
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
-      <span className={`h-2 w-2 rounded-full ${mode === "live" ? "bg-emerald-500" : "bg-sky-500"}`} aria-hidden="true" />
-      {mode === "live" ? "Session In Progress" : "Planning"}
-      <span className="font-medium text-slate-500">{count} {count === 1 ? "student" : "students"}</span>
-      {mode === "live" && hostName && <span className="font-medium text-slate-500">Hosted by {hostName}</span>}
+      <span className={`h-2 w-2 rounded-full ${sessionIsLive ? "bg-emerald-500" : "bg-sky-500"}`} aria-hidden="true" />
+      {label}
+      {sessionReady && <span className="font-medium text-slate-500">{count} {count === 1 ? "student" : "students"}</span>}
+      {sessionReady && sessionIsLive && hostName && <span className="font-medium text-slate-500">Hosted by {hostName}</span>}
     </div>
   );
 }
@@ -132,8 +133,9 @@ export default function AcademicDashboard() {
   const [drawer, setDrawer] = useState({ open: false, studentId: null });
 
   // UI mode: "setup" | "live"
-  const [mode, setMode] = useState(() => localStorage.getItem("arMode") || "setup");
-  useEffect(() => { localStorage.setItem("arMode", mode); }, [mode]);
+  const [mode, setMode] = useState("setup");
+  const sessionStatusRef = useRef(null);
+  const [sessionReadyLaneId, setSessionReadyLaneId] = useState(null);
 
   // Students: map + list for picker
   const [studentsMap, setStudentsMap] = useState({});    // sid -> student doc
@@ -278,7 +280,6 @@ export default function AcademicDashboard() {
     }
     setDeckItems([]);
     const visibleIds = new Set(Object.keys(laneStudentsMap));
-    (async () => { await ensureTodayDeck(user.uid, activeLane.id); })();
     const ref = doc(db, "deck", academicLaneDocId(activeLane.id));
     const unsub = onSnapshot(
       ref,
@@ -293,11 +294,18 @@ export default function AcademicDashboard() {
 
   useEffect(() => {
     if (!academicAllowed || isDevOwner) return undefined;
+    sessionStatusRef.current = null;
     return listenTodayAcademicSession(
       activeLane.id,
       session => {
+        const nextStatus = session?.status || "none";
+        const previousStatus = sessionStatusRef.current;
+        sessionStatusRef.current = nextStatus;
         setDailySession(session);
-        setMode(session?.status === "live" ? "live" : "setup");
+        setSessionReadyLaneId(activeLane.id);
+        if (previousStatus === null || previousStatus !== nextStatus) {
+          setMode(nextStatus === "live" ? "live" : "setup");
+        }
       },
       () => setSessionError("Today’s Academic session record could not be loaded.")
     );
@@ -399,7 +407,7 @@ export default function AcademicDashboard() {
         return;
       }
       if (on) await addToDeck(studentId, user.uid, activeLane.id, { staff });
-      else await removeFromDeck(studentId, user.uid, activeLane.id);
+      else await removeFromDeck(studentId, activeLane.id);
     } catch (error) {
       await confirmLaneMove(error, studentId, () => dailySession?.status === "live"
         ? addStudentToTodayAcademicSession(studentId, staff, activeLane.id, { move: true })
@@ -608,6 +616,10 @@ export default function AcademicDashboard() {
 
   async function handleStartSession() {
     if (deckItems.length === 0) return;
+    if (dailySession?.status === "live") {
+      setMode("live");
+      return;
+    }
     if (isDevOwner) {
       setMode("live");
       return;
@@ -623,6 +635,11 @@ export default function AcademicDashboard() {
       setMode("live");
     } catch (error) {
       console.error("[AR] start session failed", error);
+      if (error?.code === "academic/session-already-live") {
+        setMode("live");
+        setSessionMessage("This session is already live.");
+        return;
+      }
       try {
         const moved = error?.studentId && await confirmLaneMove(error, error.studentId, () => startTodayAcademicSession({
           hostUid: user.uid,
@@ -679,14 +696,14 @@ export default function AcademicDashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <WorkspaceStatus mode={mode} count={deckItems.length} hostName={dailySession?.hostName || ""} />
-          {mode === "live" && (
+          <WorkspaceStatus mode={mode} count={deckItems.length} hostName={dailySession?.hostName || ""} sessionReady={isDevOwner || sessionReadyLaneId === activeLane.id} sessionIsLive={sessionReadyLaneId === activeLane.id && dailySession?.status === "live"} />
+          {sessionReadyLaneId === activeLane.id && dailySession?.status === "live" && (
             <button
               type="button"
-              onClick={() => setMode("setup")}
+              onClick={() => setMode(mode === "live" ? "setup" : "live")}
               className="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
             >
-              Back to Planning
+              {mode === "live" ? "Manage Live Roster" : "View Live Session"}
             </button>
           )}
         </div>
@@ -705,6 +722,7 @@ export default function AcademicDashboard() {
               onClick={() => {
                 setSelectedLaneId(lane.id);
                 setDeckItems([]);
+                setSessionReadyLaneId(null);
                 setDailySession(laneSession || null);
                 setMode(laneSession?.status === "live" ? "live" : "setup");
                 setSessionError("");
@@ -729,6 +747,9 @@ export default function AcademicDashboard() {
           );
         })}
       </nav>}
+      {activeLane.grade === "6" && (
+        <p className="text-xs text-slate-600">Grade 6 North and South share the work backlog. Each lane has its own session roster.</p>
+      )}
 
       {sessionError && (
         <div className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950">
@@ -750,7 +771,9 @@ export default function AcademicDashboard() {
           )}
       </AcademicSuccessToast>
 
-      {mode === "live" ? (
+      {sessionReadyLaneId !== activeLane.id && !isDevOwner ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600" role="status">Loading session…</div>
+      ) : mode === "live" ? (
         <LiveGrid
           laneLabel={activeLane.label}
           studentsMap={laneStudentsMap}
@@ -782,6 +805,8 @@ export default function AcademicDashboard() {
           onToggleDeck={handleDeckToggle}
           onOpenDrawer={(sid) => setDrawer({ open: true, studentId: sid })}
           onStartSession={handleStartSession}
+          sessionIsLive={dailySession?.status === "live"}
+          onViewSession={() => setMode("live")}
         />
       )}
 
@@ -841,10 +866,12 @@ function SetupLayout({
   onCreateTask,
   onToggleDeck,
   onOpenDrawer,
-  onStartSession
+  onStartSession,
+  sessionIsLive,
+  onViewSession
 }) {
   const [addWorkOpen, setAddWorkOpen] = useState(false);
-  const [backlogFilters, setBacklogFilters] = useState({ search: "", subject: "" });
+  const [backlogFilters, setBacklogFilters] = useState({ search: "", subject: "", sort: "name" });
   const clearTaskForm = () => setTaskForm(tf => ({ ...tf, studentIds: [], title: "", notes: "" }));
 
   const backlogFilterOptions = useMemo(() => {
@@ -866,6 +893,12 @@ function SetupLayout({
     return [...rows].sort((a, b) => {
       const [aSid] = a;
       const [bSid] = b;
+      if (backlogFilters.sort === "oldest") {
+        const oldest = (tasks) => Math.min(...tasks.map(task => task.assignedAt?.toMillis?.() || (task.assignedAt?.seconds ? task.assignedAt.seconds * 1000 : Infinity)));
+        const aOldest = oldest(a[1]);
+        const bOldest = oldest(b[1]);
+        if (aOldest !== bOldest) return aOldest - bOldest;
+      }
       return String(studentsMap[aSid]?.displayName || aSid).localeCompare(String(studentsMap[bSid]?.displayName || bSid));
     });
   }, [backlogFilters, byStudent, studentsMap]);
@@ -901,7 +934,7 @@ function SetupLayout({
 
         {!addWorkOpen && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-xs font-semibold">
-            <span className="text-slate-500"><strong className="mr-1 text-slate-800">{byStudent.length}</strong> in backlog</span>
+            <span className="text-slate-500"><strong className="mr-1 text-slate-800">{byStudent.length}</strong> students with work</span>
             <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-800">
               <strong className="mr-1">{deckItems.length}</strong> selected today
             </span>
@@ -1060,14 +1093,14 @@ function SetupLayout({
         <div className="sticky top-20 z-30 rounded-lg border border-slate-200 border-t-4 border-t-sky-500 bg-gradient-to-r from-sky-50/50 via-white to-sky-50/50 p-3 shadow-sm backdrop-blur-sm xl:flex xl:items-center xl:gap-3">
           <div className="flex shrink-0 items-center gap-2">
             <h2 className="text-base font-bold text-slate-950">Academic Backlog</h2>
-            <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-extrabold text-sky-900">{byStudent.length}</span>
+            <span aria-label={`${byStudent.length} students with work`} className="inline-flex min-w-6 items-center justify-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-extrabold text-sky-900">{byStudent.length}</span>
             {visibleBacklog.length !== byStudent.length && (
               <span className="text-xs font-medium text-slate-500">Showing {visibleBacklog.length}</span>
             )}
           </div>
 
         {byStudent.length > 0 && (
-          <div className="mt-3 grid flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,3fr)_minmax(10rem,1fr)] xl:mt-0">
+          <div className="mt-3 grid flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)] xl:mt-0">
             <label className="relative block">
               <span className="sr-only">Search students</span>
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -1078,6 +1111,17 @@ function SetupLayout({
                 placeholder="Search students..."
                 className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
               />
+            </label>
+            <label>
+              <span className="sr-only">Sort backlog</span>
+              <select
+                value={backlogFilters.sort}
+                onChange={(event) => setBacklogFilters((current) => ({ ...current, sort: event.target.value }))}
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="name">Name A–Z</option>
+                <option value="oldest">Oldest work first</option>
+              </select>
             </label>
 
             <label>
@@ -1137,6 +1181,8 @@ function SetupLayout({
           onUnstage={(sid) => onToggleDeck(sid, false)}
           onOpen={(sid) => onOpenDrawer(sid)}
           onStartSession={onStartSession}
+          sessionIsLive={sessionIsLive}
+          onViewSession={onViewSession}
         />
       </div>}
 
@@ -1221,11 +1267,15 @@ function OnDeckPanel({
   studentsMap,
   onUnstage,
   onOpen,
-  onStartSession
+  onStartSession,
+  sessionIsLive,
+  onViewSession
 }) {
   const [copyState, setCopyState] = useState("idle");
+  const [rosterExpanded, setRosterExpanded] = useState(false);
   const copyTimerRef = useRef(null);
   const deckNames = deckItems.map((sid) => studentsMap[sid]?.displayName || sid);
+  const visibleDeckItems = rosterExpanded ? deckItems : deckItems.slice(0, 4);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
@@ -1247,9 +1297,9 @@ function OnDeckPanel({
     <section className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-slate-950">{laneLabel} — Selected Students</h2>
+          <h2 className="text-base font-bold text-slate-950">{laneLabel} — {sessionIsLive ? "Live Roster" : "Selected Students"}</h2>
           <p className="mt-1 text-sm text-slate-600">
-            {deckItems.length} {deckItems.length === 1 ? "student" : "students"} selected
+            {deckItems.length} {deckItems.length === 1 ? "student" : "students"} {sessionIsLive ? "in the session" : "selected"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1263,15 +1313,21 @@ function OnDeckPanel({
             {copyState === "copied" ? `${deckNames.length} ${deckNames.length === 1 ? "name" : "names"} copied` : copyState === "error" ? "Couldn’t copy" : "Copy names"}
           </button>
           <button
-            onClick={onStartSession}
+            onClick={sessionIsLive ? onViewSession : onStartSession}
             className="inline-flex h-10 items-center rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white shadow-sm transition active:translate-y-px hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={deckItems.length === 0}
-            title="Start today's academic session"
+            title={sessionIsLive ? "Return to the live session" : "Start today's academic session"}
           >
-            Start Session
+            {sessionIsLive ? "Return to Session" : "Start Session"}
           </button>
         </div>
       </div>
+
+      {sessionIsLive && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          This session is live. Adding or removing a student here updates the live roster immediately.
+        </p>
+      )}
 
       {deckItems.length === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
@@ -1279,8 +1335,8 @@ function OnDeckPanel({
           <div className="mt-1 text-sm text-slate-500">Use “Add to Session” in the Academic Backlog.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {deckItems.map((sid) => {
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {visibleDeckItems.map((sid) => {
             const student = studentsMap[sid] || {};
             const name = student.displayName || sid;
             const detail = formatStudentDetail(student.grade, student.homeroom);
@@ -1318,6 +1374,16 @@ function OnDeckPanel({
             );
           })}
         </div>
+      )}
+      {deckItems.length > 4 && (
+        <button
+          type="button"
+          onClick={() => setRosterExpanded(current => !current)}
+          aria-expanded={rosterExpanded}
+          className="text-sm font-semibold text-sky-800 hover:text-sky-950 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        >
+          {rosterExpanded ? "Show fewer students" : `Show all ${deckItems.length} students`}
+        </button>
       )}
     </section>
   );

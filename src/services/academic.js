@@ -9,7 +9,7 @@ import { db } from "../firebaseConfig";
 import {
   addDoc, collection, doc, getDoc, updateDoc,
   serverTimestamp, onSnapshot, query, where, orderBy,
-  arrayRemove, writeBatch, deleteDoc, getDocs, limit, startAfter, runTransaction, Timestamp
+  writeBatch, deleteDoc, getDocs, limit, startAfter, runTransaction, Timestamp
 } from "firebase/firestore";
 import { todayKey } from "../utils/date";
 import { studentRecordEvent, studentRecordEventRef } from "./studentRecordEvents";
@@ -944,24 +944,6 @@ function removeStudentFromLane(transaction, state, studentId, staff = {}) {
 // ------------------------------
 // Deck (date + lane scoped)
 // ------------------------------
-export async function ensureTodayDeck(ownerUid, laneId) {
-  const date = todayKey();
-  const lane = getAcademicLane(laneId);
-  const ref = doc(db, "deck", academicLaneDocId(lane.id, date));
-  await runTransaction(db, async transaction => {
-    const snap = await transaction.get(ref);
-    if (snap.exists()) return;
-    transaction.set(ref, {
-      items: [],
-      createdBy: ownerUid || null,
-      ...laneFields(lane, date),
-      createdAt: serverTimestamp(),
-      lastUpdated: serverTimestamp()
-    });
-  });
-  return ref;
-}
-
 export async function addToDeck(studentId, ownerUid, laneId, { move = false, staff = {} } = {}) {
   const date = todayKey();
   const lane = getAcademicLane(laneId);
@@ -981,9 +963,16 @@ export async function addToDeck(studentId, ownerUid, laneId, { move = false, sta
   });
 }
 
-export async function removeFromDeck(studentId, ownerUid, laneId) {
-  const ref = await ensureTodayDeck(ownerUid, laneId);
-  await updateDoc(ref, { items: arrayRemove(studentId), lastUpdated: serverTimestamp() });
+export async function removeFromDeck(studentId, laneId) {
+  const ref = doc(db, "deck", academicLaneDocId(laneId));
+  await runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) return;
+    transaction.update(ref, {
+      items: (snap.data().items || []).filter(id => id !== studentId),
+      lastUpdated: serverTimestamp()
+    });
+  });
 }
 
 // ------------------------------
@@ -1001,6 +990,11 @@ export async function startTodayAcademicSession({ hostUid, hostName, roster = []
   await runTransaction(db, async transaction => {
     const states = await readTodayLaneStates(transaction, date, lane.grade);
     const target = states.find(state => state.lane.id === lane.id);
+    if (target.session.status === "live") {
+      const error = new Error(`${lane.label} already has a live session.`);
+      error.code = "academic/session-already-live";
+      throw error;
+    }
     const conflicts = roster.map(studentId => ({
       studentId,
       state: findStudentLaneConflict(states, studentId, lane.id)
