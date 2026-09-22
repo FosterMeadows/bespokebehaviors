@@ -355,7 +355,7 @@ export async function bulkImportStudents(rows) {
 // ------------------------------
 // Tasks
 // ------------------------------
-export const MAX_TASK_BATCH_SIZE = 5;
+export const MAX_TASK_BATCH_SIZE = 7;
 
 function chunkAcademicValues(values, size = 8) {
   const chunks = [];

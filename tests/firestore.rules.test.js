@@ -227,8 +227,8 @@ describe("grade-scoped Firestore rules", () => {
     await assertFails(getDocs(collection(environment.authenticatedContext("behavior6").firestore(), "behaviorReteaches")));
   });
 
-  it("allows a regular teacher to create five student tasks atomically", async () => {
-    const studentIds = Array.from({ length: 5 }, (_, index) => `batch-s6-${index}`);
+  it("allows a regular teacher to create seven student tasks atomically", async () => {
+    const studentIds = Array.from({ length: 7 }, (_, index) => `batch-s6-${index}`);
     await environment.withSecurityRulesDisabled(async context => {
       const db = context.firestore();
       await Promise.all(studentIds.map((studentId, index) => setDoc(doc(db, "students", studentId), {
@@ -251,7 +251,7 @@ describe("grade-scoped Firestore rules", () => {
 
     const ownerDb = environment.authenticatedContext("owner").firestore();
     const snapshot = await getDocs(query(collection(ownerDb, "tasks"), where("studentId", "in", studentIds)));
-    assert.equal(snapshot.size, 5);
+    assert.equal(snapshot.size, 7);
   });
 
   it("loads a regular teacher's active assignments in one grade-scoped query", async () => {
