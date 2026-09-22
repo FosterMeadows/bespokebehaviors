@@ -1737,7 +1737,7 @@ function LiveGrid({
               <h3 className="text-sm font-bold text-slate-900">Students</h3>
               <span className="text-xs font-semibold text-slate-500">{deckItems.length} on roster</span>
             </div>
-            <ul className="max-h-72 divide-y divide-slate-200 overflow-y-auto lg:max-h-none lg:overflow-visible">
+            <ul className="max-h-72 divide-y divide-slate-200 overflow-y-auto lg:max-h-[calc(100vh-22rem)]">
               {deckItems.map(sid => {
                 const student = studentsMap[sid] || {};
                 const activeTasks = tasks.filter(task =>
@@ -1777,7 +1777,7 @@ function LiveGrid({
             </ul>
           </section>
 
-          <section aria-label="Selected student work" className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/70 p-3 sm:p-4 lg:sticky lg:top-4 lg:self-start">
+          <section aria-label="Selected student work" className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/70 p-3 sm:p-4 lg:sticky lg:top-20 lg:self-start">
             {selectedStudentId && (
               <>
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
