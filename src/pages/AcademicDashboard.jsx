@@ -548,7 +548,7 @@ export default function AcademicDashboard() {
     const activeCount = tasks.filter((task) => task.studentId === sid && task.active).length;
     const ok = await requestConfirmation({
       title: `Remove ${studentName} from Academic?`,
-      description: `This cancels ${activeCount} active ${activeCount === 1 ? "assignment" : "assignments"} and removes the student from today's session roster. Attendance history is preserved.`,
+      description: `This removes ${activeCount} active ${activeCount === 1 ? "assignment" : "assignments"} without marking them Completed, and removes the student from today's session roster. Attendance history is preserved.`,
       confirmLabel: "Remove from Academic",
       tone: "danger"
     });
@@ -2426,7 +2426,7 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
               <section className="rounded-xl border border-red-200 bg-red-50/60 p-4">
                 <h4 className="font-semibold text-slate-950">Remove from Academic</h4>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Cancels all active assignments for this student and removes them from today&apos;s session.
+                  Removes all active assignments without marking them Completed, and removes this student from today&apos;s session.
                 </p>
                 <button
                   type="button"
