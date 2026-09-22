@@ -634,7 +634,7 @@ export default function StudentsList() {
           .filter(event => event.studentId === selectedStudent.id);
         const lifecycleEvents = (lifecycleSnap?.docs || []).map(docSnap => {
           const item = docSnap.data();
-          return { id: `lifecycle-${docSnap.id}`, ...item, domain: "academic", occurredAt: item.at, actorUid: item.by || item.byUid || null, actorName: item.byName || null, summary: formatStatusLabel(item.eventType) };
+          return { id: `lifecycle-${docSnap.id}`, ...item, domain: "academic", occurredAt: item.at, actorUid: item.by || item.byUid || null, actorName: item.byName || null, summary: item.eventType === "taskCanceled" ? "Assignment Removed" : formatStatusLabel(item.eventType) };
         });
 
         const academicByTask = new Map();

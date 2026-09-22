@@ -23,18 +23,11 @@ import useRandomPastel from "../hooks/useRandomPastel.js";
 import { listAttendanceByStudent, listCompletedTasksByStudent } from "../services/academic";
 import { createPortal } from "react-dom";
 import { canUseAcademic, canViewStudent, getAllowedGradeLevels, isSchoolwide } from "../utils/access";
-import { formatSubjectLabel, getSubjectBorderTone, getSubjectTone } from "../utils/academicPresentation";
+import { ACADEMIC_TASK_STATUS_OPTIONS, academicStatusOptionValue, formatSubjectLabel, getSubjectBorderTone, getSubjectTone } from "../utils/academicPresentation";
 
 // -------------------------------------------------
 // AcademicDashboard — Setup (strip + add + waiting list) and Live (student workbench)
 // -------------------------------------------------
-
-const TASK_STATE_OPTIONS = [
-  { value: "not_started", label: "Hasn't started" },
-  { value: "needs_to_finish", label: "Needs to finish" },
-  { value: "in_progress", label: "In progress" },
-  { value: "completed", label: "Completed" }
-];
 
 function WorkspaceStatus({ mode, count, hostName = "", sessionIsLive = false, sessionReady = true }) {
   const label = !sessionReady ? "Loading Session" : mode === "live" ? "Session In Progress" : sessionIsLive ? "Managing Live Roster" : "Planning";
@@ -1639,6 +1632,15 @@ function LiveGrid({
 
   async function changeTaskState(task, nextState) {
     if (!task?.id || !nextState || readOnly || savingTasks[task.id]) return;
+    if (nextState === "canceled") {
+      const confirmed = await onConfirm?.({
+        title: "Remove this assignment?",
+        description: `${task.title || "This assignment"} will leave the active backlog and will not be marked Completed.`,
+        confirmLabel: "Remove assignment",
+        tone: "danger"
+      });
+      if (!confirmed) return;
+    }
     if (nextState === "completed") {
       const confirmed = await onConfirm?.({
         title: "Complete this assignment?",
@@ -1653,6 +1655,10 @@ function LiveGrid({
     setSavingTasks(current => ({ ...current, [task.id]: true }));
     try {
       if (nextState === "completed") await archiveCompletedTask(task.id, currentUser?.uid || null);
+      else if (nextState === "canceled") await cancelTask(task.id, "", {
+        uid: currentUser?.uid || "",
+        name: currentUser?.displayName || ""
+      });
       else await updateTaskState(task.id, nextState, {
         uid: currentUser?.uid || "",
         name: currentUser?.displayName || ""
@@ -1822,12 +1828,12 @@ function LiveGrid({
                         <label className="min-w-44 flex-1">
                           <span className="mb-1 block text-xs font-semibold text-slate-500">Work status</span>
                           <select
-                            value={statusOverrides[task.id] || task.state || "not_started"}
+                            value={academicStatusOptionValue(statusOverrides[task.id] || task.state)}
                             disabled={!!savingTasks[task.id] || readOnly}
                             onChange={event => changeTaskState(task, event.target.value)}
                             className="h-10 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-60"
                           >
-                            {TASK_STATE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            {ACADEMIC_TASK_STATUS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                           </select>
                         </label>
                         {savingTasks[task.id] && <span role="status" className="pb-2 text-xs font-semibold text-slate-500">Saving…</span>}
@@ -2219,36 +2225,37 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
     return () => unsubT();
   }, [open, studentId, tab]);
 
-  async function handleCancelTask(taskId) {
-    if (!taskId) return;
-    const task = assignments.find((item) => item.id === taskId);
-    const confirmed = await onConfirm?.({
-      title: "Cancel this assignment?",
-      description: `${task?.title || "This assignment"} will be removed from active lists. Its existing history will remain available.`,
-      confirmLabel: "Cancel assignment",
-      tone: "danger"
-    });
-    if (!confirmed) return;
-    try { await cancelTask(taskId, "", { uid: user?.uid || "", name: user?.displayName || "" }); }
-    catch { setDrawerError("The assignment could not be canceled."); }
-  }
-
   async function handleRemoveStudent() {
     const removed = await onRemoveStudent?.(studentId);
     if (removed) onClose();
   }
 
   async function handleChangeTaskState(taskId, nextState) {
-    if (!taskId || !nextState) return;
+    if (!taskId || !nextState || saving[taskId]) return;
+    const task = assignments.find((item) => item.id === taskId);
+    if (nextState === "canceled") {
+      const confirmed = await onConfirm?.({
+        title: "Remove this assignment?",
+        description: `${task?.title || "This assignment"} will leave active assignments and will not be marked Completed.`,
+        confirmLabel: "Remove assignment",
+        tone: "danger"
+      });
+      if (!confirmed) {
+        setAssignments(list => [...list]);
+        return;
+      }
+    }
     if (nextState === "completed") {
-      const task = assignments.find((item) => item.id === taskId);
       const confirmed = await onConfirm?.({
         title: "Complete this assignment?",
         description: `${task?.title || "This assignment"} will move out of the active backlog and into completed history.`,
         confirmLabel: "Mark completed",
         tone: "default"
       });
-      if (!confirmed) return;
+      if (!confirmed) {
+        setAssignments(list => [...list]);
+        return;
+      }
     }
     const prev = assignments;
     setAssignments(list => list.map(t => (t.id === taskId ? { ...t, state: nextState } : t)));
@@ -2256,6 +2263,8 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
     try {
       if (nextState === "completed") {
         await archiveCompletedTask(taskId, user?.uid || null);
+      } else if (nextState === "canceled") {
+        await cancelTask(taskId, "", { uid: user?.uid || "", name: user?.displayName || "" });
       } else {
         await updateTaskState(taskId, nextState, { uid: user?.uid || "", name: user?.displayName || "" });
       }
@@ -2356,7 +2365,7 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
                 )}
                 <ul className="space-y-3">
                   {assignments.map(t => {
-                    const current = t.state || "not_started";
+                    const current = academicStatusOptionValue(t.state);
                     return (
                       <li
                         key={t.id}
@@ -2393,27 +2402,20 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
                           </div>
                         )}
 
-                        <div className="mt-2 flex items-end gap-3 border-t border-slate-100 pt-2">
+                        <div className="mt-2 border-t border-slate-100 pt-2">
                           <label className="min-w-0 flex-1">
                             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
                             <select
                               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
                               value={current}
+                              disabled={!!saving[t.id]}
                               onChange={e => handleChangeTaskState(t.id, e.target.value)}
                             >
-                              {TASK_STATE_OPTIONS.map(opt => (
+                              {ACADEMIC_TASK_STATUS_OPTIONS.map(opt => (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
                             </select>
                           </label>
-                          <button
-                            type="button"
-                            className="mb-0.5 shrink-0 rounded-lg px-2 py-2 text-xs font-semibold text-slate-500 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200"
-                            title="Cancel assignment"
-                            onClick={() => handleCancelTask(t.id)}
-                          >
-                            Cancel Assignment
-                          </button>
                         </div>
                       </li>
                     );

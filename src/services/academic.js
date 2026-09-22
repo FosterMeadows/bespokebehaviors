@@ -15,6 +15,7 @@ import { todayKey } from "../utils/date";
 import { studentRecordEvent, studentRecordEventRef } from "./studentRecordEvents";
 import { academicTaskDocId } from "../utils/academicTaskIdentity";
 import { canUseAcademic, canViewStudent, getAllowedGradeLevels, isSchoolwide } from "../utils/access";
+import { formatAcademicStatus } from "../utils/academicPresentation";
 
 // ------------------------------
 // Helpers
@@ -190,7 +191,7 @@ export async function dismissStudentFromAR(studentId, todayKey, actor = {}) {
       domain: "academic",
       eventType: "taskStatusChanged",
       actor,
-      summary: `${d.data().title || "Academic assignment"}: canceled when student was removed`,
+      summary: `${d.data().title || "Academic assignment"}: Removed when student was removed`,
       sourceCollection: "tasks",
       sourceId: d.id,
       details: { previousState: d.data().state || null, nextState: "canceled" }
@@ -230,7 +231,7 @@ function normalizeStatus(s) {
 /**
  * Update a single task's workflow state.
  * - taskId: Firestore doc id in "tasks"
- * - newState: one of "not_started" | "needs_to_finish" | "in_progress" | "completed"
+ * - newState: one of "not_started" | "in_progress" (legacy "needs_to_finish" is still accepted)
  *
  * This only updates the state and lastUpdated timestamp.
  * We are NOT auto-archiving completed tasks here. That's a separate, explicit action.
@@ -253,7 +254,7 @@ export async function updateTaskState(taskId, newState, actor = {}) {
     domain: "academic",
     eventType: "taskStatusChanged",
     actor,
-    summary: `${task.title || "Academic assignment"}: ${task.state || "not started"} to ${newState}`,
+    summary: `${task.title || "Academic assignment"}: ${formatAcademicStatus(task.state || "not_started")} to ${formatAcademicStatus(newState)}`,
     sourceCollection: "tasks",
     sourceId: taskId,
     details: { previousState: task.state || null, nextState: newState }
@@ -476,7 +477,7 @@ export async function setTaskStatus(taskId, status, actor = {}) {
     domain: "academic",
     eventType: "taskStatusChanged",
     actor,
-    summary: `${task.title || "Academic assignment"}: ${task.state || "not started"} to ${state}`,
+    summary: `${task.title || "Academic assignment"}: ${formatAcademicStatus(task.state || "not_started")} to ${formatAcademicStatus(state)}`,
     sourceCollection: "tasks",
     sourceId: taskId,
     details: { previousState: task.state || null, nextState: state }

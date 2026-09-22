@@ -20,13 +20,29 @@ export function getSubjectBorderTone(subject) {
   return "border-l-slate-200";
 }
 
+export const ACADEMIC_TASK_STATUS_OPTIONS = [
+  { value: "not_started", label: "Not Started" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "canceled", label: "Removed" }
+];
+
+export function academicStatusOptionValue(value) {
+  if (value === "needs_to_finish" || value === "turned_in") return "in_progress";
+  if (value === "verified") return "completed";
+  if (value === "cancelled") return "canceled";
+  return ACADEMIC_TASK_STATUS_OPTIONS.some(option => option.value === value) ? value : "not_started";
+}
+
 export function formatAcademicStatus(value) {
   const labels = {
     not_started: "Not Started",
-    needs_to_finish: "Needs to Finish",
+    needs_to_finish: "In Progress",
+    turned_in: "In Progress",
     in_progress: "In Progress",
     completed: "Completed",
-    canceled: "Canceled",
+    canceled: "Removed",
+    cancelled: "Removed",
     verified: "Completed"
   };
   return labels[value] || "Record";
@@ -34,8 +50,7 @@ export function formatAcademicStatus(value) {
 
 export function getAcademicStatusTone(value) {
   if (value === "completed" || value === "verified") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (value === "in_progress") return "border-violet-200 bg-violet-50 text-violet-800";
-  if (value === "needs_to_finish") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (value === "canceled") return "border-slate-200 bg-slate-100 text-slate-600";
+  if (value === "in_progress" || value === "needs_to_finish" || value === "turned_in") return "border-violet-200 bg-violet-50 text-violet-800";
+  if (value === "canceled" || value === "cancelled") return "border-slate-200 bg-slate-100 text-slate-600";
   return "border-sky-200 bg-sky-50 text-sky-800";
 }
