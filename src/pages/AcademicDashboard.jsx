@@ -2000,7 +2000,6 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
   const { user } = useContext(AuthContext);
 
   const [assignments, setAssignments] = useState([]);
-  const [attendance, setAttendance] = useState([]);
   const [saving, setSaving] = useState({});
   const [tab, setTab] = useState("assignments");
   const [drawerError, setDrawerError] = useState("");
@@ -2153,14 +2152,7 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
       () => setDrawerError("Assignments could not be loaded for this student.")
     );
 
-    const aq = query(collection(db, "attendance"), where("studentId", "==", studentId), orderBy("date", "desc"));
-    const unsubA = onSnapshot(
-      aq,
-      snap => setAttendance(snap.docs.map(d => d.data())),
-      () => setDrawerError("Attendance could not be loaded for this student.")
-    );
-
-    return () => { unsubT(); unsubA(); };
+    return () => unsubT();
   }, [open, studentId, tab]);
 
   async function handleCancelTask(taskId) {
@@ -2362,20 +2354,6 @@ function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = fal
                       </li>
                     );
                   })}
-                </ul>
-              </section>
-
-              <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <h4 className="mb-2 font-semibold text-slate-950">Recent Attendance</h4>
-                {attendance.length === 0 && (
-                  <div className="text-sm text-slate-500">No attendance yet.</div>
-                )}
-                <ul className="space-y-1">
-                  {attendance.map((a, idx) => (
-                    <li key={idx} className="text-sm text-slate-700">
-                      {formatMDY(a.date)} {a.room ? `• ${a.room}` : ""} {(a.byName || a.by) ? `• by ${a.byName || formatRecorder(a.by)}` : ""}
-                    </li>
-                  ))}
                 </ul>
               </section>
 
