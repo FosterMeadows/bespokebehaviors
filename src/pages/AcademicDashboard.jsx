@@ -1763,7 +1763,7 @@ function LiveGrid({
             </ul>
           </section>
 
-          <section aria-label="Selected Student Work" className="min-w-0 border-t border-slate-200 pt-4 lg:sticky lg:top-20 lg:self-start lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+          <section aria-label="Selected Student Work" className="min-w-0 rounded-lg border-t border-slate-200 bg-slate-50 p-3 sm:p-4 lg:sticky lg:top-20 lg:self-start lg:border-l lg:border-t-0">
             {selectedStudentId && (
               <div key={selectedStudentId} className="academic-step-in">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
