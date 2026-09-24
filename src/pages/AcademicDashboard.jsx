@@ -909,8 +909,8 @@ function SetupLayout({
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
-      <section className="order-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 xl:col-start-1 xl:row-start-2">
-        <div className={addWorkOpen ? "mb-4 flex flex-wrap items-start justify-between gap-3" : "flex flex-wrap items-center justify-between gap-3"}>
+      <section className="order-3 rounded-lg border border-slate-200 border-t-4 border-t-sky-500 bg-slate-50/70 p-4 xl:col-start-1 xl:row-start-2">
+        <div className={addWorkOpen ? "mb-3 flex flex-wrap items-start justify-between gap-2" : "flex flex-wrap items-center justify-between gap-3"}>
           <div>
             <h2 className="text-base font-bold text-slate-950">Add Work</h2>
             <p className="mt-1 text-sm text-slate-600">
@@ -920,7 +920,7 @@ function SetupLayout({
           {addWorkOpen ? (
             <button
               type="button"
-              className="inline-flex h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              className="inline-flex h-9 items-center rounded-md px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               onClick={() => setAddWorkOpen(false)}
             >
               Collapse
@@ -928,7 +928,7 @@ function SetupLayout({
           ) : (
             <button
               type="button"
-              className="inline-flex h-10 items-center rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white shadow-sm transition active:translate-y-px hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+              className="inline-flex h-10 items-center rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white transition active:translate-y-px hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
               onClick={() => setAddWorkOpen(true)}
             >
               + Add Work
@@ -938,7 +938,7 @@ function SetupLayout({
 
         {!addWorkOpen && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-xs font-semibold">
-            <span className="text-slate-500"><strong className="mr-1 text-slate-800">{byStudent.length}</strong> students with work</span>
+            <span className="text-slate-600"><strong className="mr-1 text-slate-800">{byStudent.length}</strong> students with work</span>
             <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-800">
               <strong className="mr-1">{deckItems.length}</strong> selected today
             </span>
@@ -948,13 +948,13 @@ function SetupLayout({
         {addWorkOpen && (
         <form
           onSubmit={onCreateTask}
-          className="space-y-4"
+          className="space-y-3"
         >
           {/* Row 1: Student name picker */}
           <div className="grid grid-cols-1">
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Search Students</label>
-              <span className="text-xs font-medium text-slate-500">{taskForm.studentIds.length}/{MAX_TASK_BATCH_SIZE} selected</span>
+              <label className="text-sm font-semibold text-slate-800">Search students</label>
+              <span className="text-xs font-medium text-slate-600">{taskForm.studentIds.length}/{MAX_TASK_BATCH_SIZE} selected</span>
             </div>
             {taskForm.studentIds.length > 0 && (
               <div className="mb-2 space-y-2" aria-label="Selected students">
@@ -962,7 +962,7 @@ function SetupLayout({
                   const student = studentsMap[studentId] || {};
                   const studentName = student.displayName || studentId;
                   return (
-                    <div key={studentId} className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-sky-200 bg-white px-3 py-2 shadow-sm">
+                    <div key={studentId} className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-sky-200 bg-white px-3 py-2">
                       <span className="min-w-0 truncate text-sm font-semibold text-slate-900">{studentName}</span>
                       <button
                         type="button"
@@ -989,11 +989,11 @@ function SetupLayout({
                 ? current
                 : { ...current, studentIds: [...current.studentIds, sid] })}
               onClear={() => {}}
-              inputClassName="!px-3 !py-2 !text-[14px]"
+              inputClassName="!px-3 !py-2 !text-[14px] !shadow-none placeholder:!text-slate-500"
               dropdownClassName=""
             />
             {taskForm.studentIds.length >= MAX_TASK_BATCH_SIZE && (
-              <p className="mt-1.5 text-xs font-medium text-slate-500">Maximum {MAX_TASK_BATCH_SIZE} students per bulk assignment.</p>
+              <p className="mt-1.5 text-xs font-medium text-slate-600">Maximum {MAX_TASK_BATCH_SIZE} students per bulk assignment.</p>
             )}
           </div>
 
@@ -1001,10 +1001,10 @@ function SetupLayout({
           <div className="grid grid-cols-1 gap-3">
             {/* Subject */}
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5 block">Subject</label>
+              <label className="text-sm font-semibold text-slate-800 mb-1.5 block">Subject</label>
               <div className="relative">
                 <select
-                  className="appearance-none w-full rounded-lg border border-slate-300 bg-white px-3 pr-10 py-2 text-[14px] shadow-sm
+                  className="appearance-none w-full rounded-lg border border-slate-300 bg-white px-3 pr-10 py-2 text-[14px]
                              focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition"
                   value={taskForm.subject}
                   onChange={e => setTaskForm(tf => ({ ...tf, subject: e.target.value }))}
@@ -1014,20 +1014,14 @@ function SetupLayout({
                   <option value="Sci">Science</option>
                   <option value="SS">Social Studies</option>
                 </select>
-                <svg
-                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500"
-                  viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
-                >
-                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.17l3.71-2.94a.75.75 0 1 1 .94 1.16l-4.24 3.36a.75.75 0 0 1-.94 0L5.21 8.39a.75.75 0 0 1 .02-1.18z" clipRule="evenodd" />
-                </svg>
               </div>
             </div>
 
             {/* Assignment name */}
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5 block">Assignment Name</label>
+              <label className="text-sm font-semibold text-slate-800 mb-1.5 block">Assignment name</label>
               <input
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[14px] shadow-sm
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[14px]
                            focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition"
                 placeholder="e.g., Argument essay draft"
                 value={taskForm.title}
@@ -1040,41 +1034,40 @@ function SetupLayout({
 
           {/* Row 3: Notes */}
           <div className="grid grid-cols-1">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5 block">
-              Academic Note
+              <label className="text-sm font-semibold text-slate-800 mb-1.5 block">
+              Academic note
             </label>
             <textarea
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[14px] shadow-sm min-h-[76px]
-                         placeholder:text-slate-400
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[14px] min-h-[76px]
+                         placeholder:text-slate-500
                          focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition"
               placeholder="What should the academic host know?"
               value={taskForm.notes}
               onChange={e => setTaskForm(tf => ({ ...tf, notes: e.target.value }))}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-600">
               Be specific about what is missing or where help is needed. Students don’t see this.
             </p>
           </div>
 
-          {(taskForm.studentIds.length === 0 || !taskForm.title.trim()) && (
-            <div className="text-sm text-slate-600">
-              {taskForm.studentIds.length === 0 ? "Choose at least one student to continue." : "Enter an assignment name."}
+          <div className="flex flex-col items-stretch gap-2 border-t border-slate-200 pt-3">
+            <div className="space-y-1 text-xs leading-4 text-slate-600">
+              {(taskForm.studentIds.length === 0 || !taskForm.title.trim()) && (
+                <p>{taskForm.studentIds.length === 0 ? "Choose at least one student to continue." : "Enter an assignment name."}</p>
+              )}
+              <p>Assigning as {taskForm.teacher || "current teacher"}</p>
             </div>
-          )}
-
-          <div className="flex flex-col items-stretch gap-3 border-t border-slate-200 pt-4">
-            <span className="text-xs font-medium text-slate-500">Assigning as {taskForm.teacher || "current teacher"}</span>
             <div className="flex items-center justify-end gap-2">
             <button
               type="button"
-              className="inline-flex h-10 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              className="inline-flex h-10 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               onClick={clearTaskForm}
             >
               Clear
             </button>
             <button
               type="submit"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white shadow-sm transition active:translate-y-px hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white transition active:translate-y-px hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-45"
               disabled={taskForm.studentIds.length === 0 || !taskForm.title.trim() || taskSubmitting}
               title="Add academic work"
             >
