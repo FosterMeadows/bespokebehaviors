@@ -1209,17 +1209,20 @@ function BacklogStudentRow({
   const oldestWorkAge = formatOldestWorkAge(tasks);
 
   return (
-    <article className="relative grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 transition last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(9rem,0.75fr)_auto]">
+    <article className="group relative grid min-h-20 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 transition-colors last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(9rem,0.75fr)_8rem]">
       <button
         type="button"
         onClick={onOpen}
         aria-label={`Open details for ${name}`}
-        className="absolute inset-0 z-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+        className="absolute inset-0 z-0 cursor-pointer rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
       />
 
       <div className="pointer-events-none relative z-10 col-start-1 row-start-1 min-w-0">
-        <div className="truncate text-[15px] font-bold leading-tight text-slate-950">{name}</div>
-        <div className="mt-0.5 truncate text-xs font-medium text-slate-500">{studentDetail || "Student"}</div>
+        <div className="flex items-center gap-1 text-[15px] font-bold leading-tight text-slate-950 group-hover:text-sky-800">
+          <span className="truncate">{name}</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-sky-700" aria-hidden="true" />
+        </div>
+        <div className="mt-0.5 truncate text-[13px] font-medium text-slate-600">{studentDetail || "Student"}</div>
       </div>
 
       <div className="pointer-events-none relative z-10 col-start-1 row-start-2 flex min-w-0 flex-wrap gap-1.5 xl:col-start-2 xl:row-start-1">
@@ -1233,31 +1236,21 @@ function BacklogStudentRow({
         )}
       </div>
 
-      <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex w-fit flex-col gap-0.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs xl:col-start-3 xl:row-start-1">
-        <span className="font-semibold text-slate-700">{oldestWorkAge}</span>
-        <span className="font-medium text-slate-500">{days} {days === 1 ? "Day" : "Days"} Served</span>
+      <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex flex-col gap-0.5 text-[13px] tabular-nums xl:col-start-3 xl:row-start-1">
+        <span className="font-semibold text-slate-900">{oldestWorkAge}</span>
+        <span className="font-medium text-slate-600">{days} {days === 1 ? "Day" : "Days"} Served</span>
       </div>
 
       <div className="relative z-20 col-start-2 row-span-3 row-start-1 flex self-center justify-end xl:col-start-4 xl:row-span-1">
-        {staged ? (
-          <button
-            type="button"
-            onClick={onUnstage}
-            aria-label="Remove from today's session"
-            title="Remove from today's session"
-            className="inline-flex h-9 min-w-28 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 transition active:translate-y-px hover:border-sky-300 hover:bg-sky-100"
-          >
-            Selected <X size={13} className="translate-y-px" aria-hidden="true" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onStage}
-            className="inline-flex h-10 min-w-32 items-center justify-center whitespace-nowrap rounded-lg border border-sky-300 bg-white px-4 text-sm font-semibold text-sky-800 shadow-sm transition active:translate-y-px hover:border-sky-400 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
-          >
-            Add to Session
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={staged ? onUnstage : onStage}
+          aria-label={staged ? "Remove from today's session" : undefined}
+          title={staged ? "Remove from today's session" : undefined}
+          className={`inline-flex h-10 w-32 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-2 text-sm font-semibold text-sky-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${staged ? "border-sky-300 bg-sky-50 hover:border-sky-400 hover:bg-sky-100" : "border-sky-300 bg-white hover:border-sky-400 hover:bg-sky-50"}`}
+        >
+          {staged ? <>Selected <X size={14} aria-hidden="true" /></> : "Add to Session"}
+        </button>
       </div>
     </article>
   );
