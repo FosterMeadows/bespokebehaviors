@@ -1,5 +1,4 @@
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebaseConfig";
+import { auth } from "../firebaseAuth.js";
 import { APP_RELEASE } from "../utils/release";
 
 import { errorDiagnostics, diagnosticKey } from "../utils/errorDiagnostics.js";
@@ -47,7 +46,8 @@ export async function reportClientError(error, { source = "application", operati
 
   const reference = referenceId();
   try {
-    await addDoc(collection(db, "clientErrors"), {
+    const { writeClientError } = await import("./clientErrorWriter.js");
+    await writeClientError({
       reference,
       userUid: user.uid,
       route,
@@ -55,8 +55,7 @@ export async function reportClientError(error, { source = "application", operati
       ...diagnostics,
       release: APP_RELEASE,
       online: navigator.onLine,
-      userAgent: String(navigator.userAgent || "unknown").slice(0, 240),
-      occurredAt: serverTimestamp()
+      userAgent: String(navigator.userAgent || "unknown").slice(0, 240)
     });
     return reference;
   } catch {

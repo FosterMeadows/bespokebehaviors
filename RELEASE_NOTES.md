@@ -1,5 +1,10 @@
 # Release hardening summary
 
+- Defer database initialization and the signed-in layout until they are needed.
+  Load analysis functions with analysis features and error-report writes on demand.
+  Initial JavaScript falls from about 847 KB to 357 KB (259 KB to 113 KB gzip).
+  Profile loads discard stale results after sign-out or account changes.
+
 - Split the Academic service into student records, tasks, attendance, sessions,
   and history modules. Existing imports and all public functions remain available;
   database paths and operations are unchanged.

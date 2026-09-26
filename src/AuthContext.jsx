@@ -1,6 +1,6 @@
 // src/AuthContext.jsx
 import React, { createContext, useEffect, useState } from "react";
-import { auth, provider, db, qaEmulatorMode } from "./firebaseConfig";
+import { auth, provider, qaEmulatorMode } from "./firebaseAuth.js";
 import {
   browserLocalPersistence,
   onAuthStateChanged,
@@ -9,8 +9,6 @@ import {
   signInWithPopup,
   signOut
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { onSnapshot } from "firebase/firestore";
 import { QA_PASSWORD } from "./qa/personas";
 
 export const AuthContext = createContext();
@@ -30,6 +28,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let unsubscribeProfile = () => {};
+    let profileRequest = 0;
+    let disposed = false;
     setPersistence(auth, browserLocalPersistence)
       .then(() => {
         setAuthDebug("Auth persistence ready.");
@@ -41,6 +41,8 @@ export function AuthProvider({ children }) {
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      const request = ++profileRequest;
+      const isCurrent = () => !disposed && request === profileRequest && auth.currentUser?.uid === u?.uid;
       unsubscribeProfile();
       unsubscribeProfile = () => {};
       setProfileLoading(true);
@@ -56,26 +58,23 @@ export function AuthProvider({ children }) {
       setUser(u);
       setAuthDebug("Signed-in account loaded.");
       try {
-        const ref = doc(db, "teachers", u.uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          const pendingProfile = {
-            displayName: u.displayName || u.email || "Teacher",
-            contactEmail: u.email || ""
-          };
-          await setDoc(ref, pendingProfile);
-        }
-        if (auth.currentUser?.uid !== u.uid) return;
-        unsubscribeProfile = onSnapshot(ref, profileSnapshot => {
+        const { ensureTeacherProfile, listenTeacherProfile } = await import("./services/teacherProfiles.js");
+        if (!isCurrent()) return;
+        const ref = await ensureTeacherProfile(u, isCurrent);
+        if (!isCurrent() || !ref) return;
+        unsubscribeProfile = listenTeacherProfile(ref, profileSnapshot => {
+          if (!isCurrent()) return;
           setProfile(profileSnapshot.exists() ? { ...EMPTY_PROFILE, ...profileSnapshot.data() } : EMPTY_PROFILE);
           setProfileLoading(false);
           setAuthDebug("Teacher access is current.");
         }, err => {
+          if (!isCurrent()) return;
           setProfile(EMPTY_PROFILE);
           setProfileLoading(false);
           setAuthDebug(`Teacher profile failed to refresh: ${describeAuthError(err)}`);
         });
       } catch (err) {
+        if (!isCurrent()) return;
         setProfile(EMPTY_PROFILE);
         setAuthDebug(`Teacher profile failed to load: ${describeAuthError(err)}`);
         setProfileLoading(false);
@@ -83,6 +82,8 @@ export function AuthProvider({ children }) {
     });
 
     return () => {
+      disposed = true;
+      profileRequest += 1;
       unsubscribe();
       unsubscribeProfile();
     };

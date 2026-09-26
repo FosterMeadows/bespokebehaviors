@@ -3,7 +3,8 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { Link } from "react-router";
 import { Sparkles, ChevronDown } from "lucide-react";
-import { db, analysisFunctions } from "../firebaseConfig";
+import { db } from "../firebaseConfig";
+import { analysisFunctions } from "../firebaseFunctions.js";
 import {
   MAX_ANALYSIS_RECORDS,
   normalizeAnalysisScope,

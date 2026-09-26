@@ -2,7 +2,6 @@
 import React, { lazy, Suspense, useContext } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router";
 import { AuthContext } from "./AuthContext.jsx";
-import Layout from "./components/Layout.jsx";
 import SignInPage from "./pages/SignInPage.jsx";
 import {
   canUseAcademic,
@@ -16,6 +15,7 @@ import {
 
 import { useInstallClientLogger, useProductionErrorReporter, DebugOverlay } from "./debug/ClientLogger.jsx";
 
+const Layout = lazy(() => import("./components/Layout.jsx"));
 const BehaviorLog = lazy(() => import("./pages/BehaviorLog.jsx"));
 const StandardsTracker = lazy(() => import("./pages/StandardsTracker.jsx"));
 const GradeCalculator = lazy(() => import("./pages/GradeCalculator.jsx"));
