@@ -11,9 +11,28 @@ jobs:
   build_and_preview:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci && npm run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install application dependencies
+        run: npm ci && npm --prefix functions ci
+      - name: Install Firebase emulator tooling
+        run: npm install --global firebase-tools@15.8.0
+      - name: Verify lint, unit tests, production build, and dependency audits
+        run: npm run verify
+      - name: Verify Firestore access rules
+        run: npm run test:rules -- --project checkpoint-rules-test
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

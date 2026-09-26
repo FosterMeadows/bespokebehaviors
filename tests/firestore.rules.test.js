@@ -5,6 +5,8 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebas
 import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { cancelBehaviorReteach } from "../src/services/behaviorCancellation.js";
 import { behaviorSummary } from "../src/utils/behaviorRecords.js";
+import { operationalWindowQueries, operationalWorkloadQueries, mergeOperationalRows } from "../src/services/operationalData.js";
+import { buildOperationalMetrics, startOfWindow } from "../src/utils/operationalMetrics.js";
 
 let environment;
 
@@ -880,5 +882,81 @@ describe("AI analysis access", () => {
       await assertFails(getDoc(doc(db, "behaviorAnalysisControl", "school")));
       await assertFails(setDoc(doc(db, "behaviorAnalysisControl", "school"), { dailyAttempts: 0 }));
     }
+  });
+});
+
+describe("operational dashboard queries", () => {
+  it("matches full-history metrics across windows while excluding finished historical work", async () => {
+    const now = new Date("2026-07-19T12:00:00");
+    const old = new Date("2025-01-01T12:00:00");
+    const recent = new Date("2026-07-18T12:00:00");
+    const mid = new Date("2026-07-01T12:00:00");
+    const serialized = { seconds: Math.floor(recent.getTime() / 1000) };
+    await environment.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      const fixtures = {
+        tasks: {
+          "legacy-open": { studentId: "s6", createdAt: old },
+          "old-open": { studentId: "s7", active: true, state: "not_started", assignedAt: old },
+          "recent-complete": { studentId: "s6", active: false, state: "completed", assignedAt: recent, completedAt: now },
+        },
+        behaviorReteachSummaries: {
+          "old-pending": { status: "pending", createdAt: old, studentId: "s6", grade: "6" },
+          "undated-pending": { status: "pending", studentId: "s7", grade: "7" },
+          "old-served": { status: "served", createdAt: old, servedAt: old },
+          "old-cancelled": { status: "cancelled", createdAt: old },
+          "recent-served": { status: "served", createdAt: recent, reteachDate: "2026-07-18", servedAt: now },
+          "mid-served": { status: "served", createdAt: mid, servedAt: recent },
+          "fallback-served": { status: "served", reteachDate: "2026-07-18", servedAt: now },
+          "iso-served": { status: "served", createdAt: recent.toISOString(), servedAt: now },
+          "serialized-served": { status: "served", createdAt: serialized, servedAt: now },
+          "numeric-served": { status: "served", createdAt: recent.getTime(), servedAt: now },
+          "window-boundary": { status: "served", createdAt: startOfWindow(now, 7).toISOString(), servedAt: now },
+          "before-window": { status: "served", createdAt: new Date(startOfWindow(now, 7).getTime() - 1).toISOString(), servedAt: now },
+          "future-record": { status: "served", createdAt: new Date("2026-08-01T12:00:00"), servedAt: now },
+          "old-primary": { status: "served", createdAt: old, reteachDate: "2026-07-18", servedAt: now },
+        },
+        academicSessions: {
+          "old-session": { date: "2025-01-01", roster: ["s6"] },
+          "recent-session": { date: "2026-07-18", startedAt: recent, roster: ["s6"], outcomes: { s6: { status: "present" } } },
+          "mid-session": { date: "2026-07-01", roster: ["s6"], outcomes: { s6: { status: "no_show" } } },
+          "fallback-session": { startedAt: recent, roster: ["s7"] },
+          "iso-session": { startedAt: recent.toISOString(), roster: ["s7"] },
+          "serialized-session": { startedAt: serialized, roster: ["s7"] },
+          "old-primary": { date: "2025-01-01", startedAt: recent, roster: ["s7"] },
+        },
+        behaviorHomeContactRequirements: {
+          "old-pending": { status: "pending", requiredAt: old },
+          "old-complete": { status: "completed", requiredAt: old },
+          "recent-complete": { status: "completed", requiredAt: recent },
+        },
+      };
+      await Promise.all(Object.entries(fixtures).flatMap(([name, records]) =>
+        Object.entries(records).map(([id, data]) => setDoc(doc(db, name, id), data))));
+    });
+    const db = environment.authenticatedContext("admin").firestore();
+    const read = async queries => Object.fromEntries(await Promise.all(Object.entries(queries).map(async ([key, source]) => {
+      const snapshots = await Promise.all((Array.isArray(source) ? source : [source]).map(item => assertSucceeds(getDocs(item))));
+      return [key, mergeOperationalRows(snapshots.map(snapshot => snapshot.docs.map(item => ({ ...item.data(), id: item.id }))))];
+    })));
+    const full = await read(Object.fromEntries(Object.entries({
+      tasks: "tasks", students: "students", behaviorRecords: "behaviorReteachSummaries",
+      sessions: "academicSessions", homeContacts: "behaviorHomeContactRequirements",
+    }).map(([key, name]) => [key, collection(db, name)])));
+    for (const days of [7, 30, 90]) {
+      const filtered = await read({ ...operationalWorkloadQueries(db, true), ...operationalWindowQueries(db, startOfWindow(now, days)) });
+      assert.deepEqual(buildOperationalMetrics({ ...filtered, days, now }), buildOperationalMetrics({ ...full, days, now }));
+      assert.ok(filtered.behaviorRecords.some(row => row.id === "old-pending"));
+      assert.ok(!filtered.behaviorRecords.some(row => row.id === "old-served"));
+      assert.ok(!filtered.sessions.some(row => row.id === "old-session"));
+      assert.deepEqual(filtered.homeContacts.map(row => row.id), ["old-pending"]);
+    }
+    const mtss = environment.authenticatedContext("mtss").firestore();
+    const mtssQueries = { ...operationalWorkloadQueries(mtss, false), ...operationalWindowQueries(mtss, startOfWindow(now, 7)) };
+    assert.equal(mtssQueries.homeContacts, undefined);
+    await read(mtssQueries);
+    await environment.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), "behaviorReteachSummaries", "old-pending"), { status: "served" }));
+    const updated = await read(operationalWindowQueries(db, startOfWindow(now, 7)));
+    assert.ok(!updated.behaviorRecords.some(row => row.id === "old-pending"));
   });
 });

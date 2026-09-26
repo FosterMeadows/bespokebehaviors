@@ -18,6 +18,13 @@
 
 ## Firebase deployment
 
+Pushes to `main` and same-repository pull requests run `npm run verify` and the
+Firestore rules suite before publishing hosting. Either check failing blocks
+that workflow's deployment. CI uses Node 22, Java 21, and Firebase CLI 15.8.0;
+rules tests run against the local emulator with project ID `checkpoint-rules-test`.
+The production build produced by verification is the artifact published by the
+hosting action.
+
 ```powershell
 firebase use bespokebehaviors
 firebase deploy --only firestore:rules,firestore:indexes

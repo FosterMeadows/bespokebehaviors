@@ -10,7 +10,7 @@ import {
   limit,
   orderBy,
 } from "firebase/firestore";
-import PrepView from "../components/DailyPlan/PrepView";
+import SharedPlanPrep from "./SharedPlanPrep";
 import ela8 from "../data/standards/ela8.json";
 
 // fallback pastels if a prep has none
@@ -119,7 +119,7 @@ export default function SharePage() {
               ) : (
                 <div className="space-y-4">
                   {prepList.map((item, i) => (
-                    <PrepView
+                    <SharedPlanPrep
                       key={item.id}
                       id={item.id}
                       name={item.name}

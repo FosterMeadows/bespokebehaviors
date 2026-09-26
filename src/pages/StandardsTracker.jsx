@@ -2,7 +2,6 @@ import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from "firebase/firestore";
-import { useNavigate } from "react-router";
 import ela8 from "../data/standards/ela8.json";
 
 // Softer, less saturated colors
@@ -33,12 +32,6 @@ function parseMaybeDate(raw) {
   const d = new Date(raw);
   return isNaN(d.getTime()) ? new Date() : d;
 }
-function fmtParam(d) {
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yy = d.getFullYear();
-  return `${mm}.${dd}.${yy}`;
-}
 function fmtDisplay(d) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -53,7 +46,7 @@ export default function StandardsTracker() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Coverage = { code: [ { display, param, id, ts } ] }
+  // Coverage = { code: [ { display, id, ts } ] }
   const [coverage, setCoverage] = useState({});
   // Reflections = { code: [ { date, text } ] }
   const [reflections, setReflections] = useState({});
@@ -69,7 +62,6 @@ export default function StandardsTracker() {
   // Simple filter
   const [query, setQuery] = useState("");
 
-  const navigate = useNavigate();
 
   // 1. Load saved standards package
   useEffect(() => {
@@ -125,12 +117,11 @@ export default function StandardsTracker() {
 
           const d = parseMaybeDate(data.date);
           const display = fmtDisplay(d);
-          const param = fmtParam(d);
           const ts = d.getTime();
 
           standardsListInPlan.forEach((code) => {
             if (!cov[code]) cov[code] = [];
-            cov[code].push({ display, param, id: docSnap.id, ts });
+            cov[code].push({ display, id: docSnap.id, ts });
           });
         });
 
@@ -362,10 +353,9 @@ export default function StandardsTracker() {
 <div className="flex flex-wrap gap-2 my-2">
   {(coverage[code] || [])
     .slice(0, 5)   // 👈 show at most 5 most recent
-    .map(({ display, param, id }) => (
-      <button
+    .map(({ display, id }) => (
+      <span
         key={id}
-        onClick={() => navigate(`/dailyplan?date=${param}`)}
         className="px-3 py-1 text-white rounded-full text-xs"
         style={{
           backgroundColor:
@@ -376,10 +366,9 @@ export default function StandardsTracker() {
               : "hsl(0, 45%, 70%)",
           opacity: 0.9,
         }}
-        type="button"
       >
         {display}
-      </button>
+      </span>
     ))}
   {coverage[code] && coverage[code].length > 5 && (
     <span className="px-2 py-1 text-xs text-gray-600">

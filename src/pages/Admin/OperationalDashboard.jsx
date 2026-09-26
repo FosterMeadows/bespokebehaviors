@@ -17,14 +17,8 @@ import { AuthContext } from "../../AuthContext";
 import { db } from "../../firebaseConfig";
 import { canOverrideBehaviorThreshold } from "../../utils/access";
 import { buildOperationalMetrics } from "../../utils/operationalMetrics";
+import { useOperationalData } from "../../hooks/useOperationalData.js";
 import { APP_RELEASE } from "../../utils/release";
-
-const COLLECTIONS = {
-  tasks: "tasks",
-  behaviorRecords: "behaviorReteachSummaries",
-  sessions: "academicSessions",
-  students: "students"
-};
 
 function formatPercent(value) {
   return value === null ? "—" : `${value}%`;
@@ -77,41 +71,13 @@ function EmptyState({ children }) {
 }
 
 export default function OperationalDashboard() {
-  const { profile } = useContext(AuthContext);
+  const { user, profile } = useContext(AuthContext);
   const canViewHomeContacts = canOverrideBehaviorThreshold(profile);
   const [days, setDays] = useState(30);
-  const [data, setData] = useState({
-    tasks: [], behaviorRecords: [], sessions: [], homeContacts: [], students: []
-  });
-  const [loading, setLoading] = useState(true);
+  const { data, loading, errors: dataErrors, now } = useOperationalData(user.uid, days, canViewHomeContacts);
   const [errors, setErrors] = useState([]);
   const [clientErrors, setClientErrors] = useState([]);
   const [showAllErrors, setShowAllErrors] = useState(false);
-
-  useEffect(() => {
-    const subscriptions = canViewHomeContacts
-      ? { ...COLLECTIONS, homeContacts: "behaviorHomeContactRequirements" }
-      : COLLECTIONS;
-    const loaded = new Set();
-    const unsubs = Object.entries(subscriptions).map(([key, collectionName]) => onSnapshot(
-      collection(db, collectionName),
-      snapshot => {
-        loaded.add(key);
-        setData(current => ({
-          ...current,
-          [key]: snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-        }));
-        if (loaded.size === Object.keys(subscriptions).length) setLoading(false);
-      },
-      error => {
-        loaded.add(key);
-        setErrors(current => current.includes(collectionName) ? current : [...current, collectionName]);
-        if (loaded.size === Object.keys(subscriptions).length) setLoading(false);
-        console.error(`[OperationalDashboard] ${collectionName}`, error);
-      }
-    ));
-    return () => unsubs.forEach(unsub => unsub());
-  }, [canViewHomeContacts]);
 
   useEffect(() => onSnapshot(
     query(collection(db, "clientErrors"), orderBy("occurredAt", "desc"), limit(200)),
@@ -123,12 +89,8 @@ export default function OperationalDashboard() {
   ), []);
 
   const errorGroups = useMemo(() => groupClientErrors(clientErrors), [clientErrors]);
-  const metrics = useMemo(() => buildOperationalMetrics({ ...data, days }), [data, days]);
+  const metrics = useMemo(() => buildOperationalMetrics({ ...data, days, now }), [data, days, now]);
   const maxGradeItems = Math.max(1, ...metrics.gradeWorkload.map(row => row.academicItems + row.behaviorItems));
-
-  if (loading) {
-    return <div className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-600">Loading operational health…</div>;
-  }
 
   return (
     <div className="space-y-5">
@@ -166,6 +128,13 @@ export default function OperationalDashboard() {
         </div>
       )}
 
+      {loading ? (
+        <div role="status" className="rounded-xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-600">Loading operational health…</div>
+      ) : dataErrors.length ? (
+        <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Operational measures could not be loaded. Reload the page to retry.
+        </div>
+      ) : <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           icon={<BookOpenCheck className="h-5 w-5" aria-hidden="true" />}
@@ -296,6 +265,8 @@ export default function OperationalDashboard() {
           <span className="ml-2 text-xs text-slate-500">Removed and unmarked students are excluded.</span>
         </div>
       </Panel>
+
+      </>}
 
       <Panel title="Recent Application Errors" description="Grouped from the latest 200 reports, independently of the reporting window above. Counts exclude duplicate signals suppressed within 30 seconds. Raw error messages and student content are not stored.">
         {errorGroups.length === 0 ? <EmptyState>No production errors have been reported.</EmptyState> : (

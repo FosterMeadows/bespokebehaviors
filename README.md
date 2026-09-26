@@ -11,6 +11,15 @@ Currently, two official plugins are available:
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
 
+## Automated checks
+
+- `npm test` discovers `*.test.js`, `*.test.mjs`, and `*.test.cjs` files recursively
+  under `tests/`. New unit tests require no changes to `package.json`.
+- Files named `*.rules.test.*` are excluded from unit discovery because they need
+  the Firestore emulator. Run the Firestore rules suite with `npm run test:rules`.
+- `npm run verify` runs lint, unit tests, the production build, and production
+  dependency audits.
+
 ## Local role-based QA
 
 The QA harness uses local Firebase Auth and Firestore emulators. It never connects QA personas to production.

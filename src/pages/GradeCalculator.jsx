@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 
-/** Pastel palette + hook to mirror DailyPlan aesthetic */
+/** Pastel palette and theme hook */
 const PASTEL_COLORS = [
   { bg: "hsl(200, 60%, 90%)", text: "hsl(200, 50%, 40%)" },
   { bg: "hsl(160, 60%, 90%)", text: "hsl(160, 50%, 32%)" },

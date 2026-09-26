@@ -12,7 +12,7 @@ export function metricDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function startOfWindow(now, days) {
+export function startOfWindow(now, days) {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - Math.max(0, days - 1));

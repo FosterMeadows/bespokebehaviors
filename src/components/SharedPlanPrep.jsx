@@ -1,7 +1,7 @@
-// src/components/DailyPlan/PrepView.jsx
-import { Chevron } from "../icons";
+// Displays saved legacy plans for existing shared-plan links.
+import { Chevron } from "./icons";
 
-export default function PrepView({
+export default function SharedPlanPrep({
   id,
   name,
   pastel,

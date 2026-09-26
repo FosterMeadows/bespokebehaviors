@@ -1,18 +1,14 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
-  CalendarDays,
   CheckSquare,
   NotebookPen,
-  PlusCircle,
   ArrowRight,
 } from "lucide-react";
 
 import { AuthContext } from "../AuthContext.jsx";
 import { db } from "../firebaseConfig";
 import {
-  doc,
-  getDoc,
   collection,
   query,
   where,
@@ -21,7 +17,7 @@ import {
   getDocs
 } from "firebase/firestore";
 
-import { makeDateKey, formatPrettyDate, formatWeekday } from "../utils/date";
+import { formatPrettyDate, formatWeekday } from "../utils/date";
 
 /* ---- UI shells ---- */
 function Card({ title, icon: Icon, action, children }) {
@@ -39,24 +35,10 @@ function Card({ title, icon: Icon, action, children }) {
   );
 }
 
-function Line({ label, children }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="mt-1 h-1.5 w-1.5 rounded-full bg-sky-400" />
-      <div className="min-w-0">
-        {label && <div className="text-xs font-medium text-sky-600">{label}</div>}
-        <div className="text-sm text-sky-900">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const { user } = useContext(AuthContext);
   const today = useMemo(() => new Date(), []);
-  const dateKey = useMemo(() => makeDateKey(today), [today]);
 
-  const [plans, setPlans] = useState(null);
   const [checklistTop, setChecklistTop] = useState([]);
   const [latestNote, setLatestNote] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,12 +49,7 @@ export default function Dashboard() {
       if (!user) return;
       setLoading(true);
       try {
-        /* 1) Today’s plan snapshot */
-        const planRef = doc(db, "teachers", user.uid, "dailyPlans", dateKey);
-        const planSnap = await getDoc(planRef);
-        const planData = planSnap.exists() ? planSnap.data() : null;
-
-        /* 2) Checklist highlights from MegaChecklist (done=false, newest first) */
+        /* Checklist highlights from MegaChecklist (done=false, newest first) */
         const itemsCol = collection(db, "teachers", user.uid, "checklist");
         let clRows = [];
         try {
@@ -85,7 +62,7 @@ export default function Dashboard() {
           clRows = clSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         }
 
-        /* 3) Latest Note (tries teacherNotes, then notes) */
+        /* Latest Note (tries teacherNotes, then notes) */
         let noteDoc = null;
         try {
           const tnCol = collection(db, "teachers", user.uid, "teacherNotes");
@@ -107,13 +84,11 @@ export default function Dashboard() {
         }
 
         if (!isMounted) return;
-        setPlans(planData);
         setChecklistTop(clRows);
         setLatestNote(noteDoc);
       } catch (e) {
         console.error("Dashboard load error:", e);
         if (!isMounted) return;
-        setPlans(null);
         setChecklistTop([]);
         setLatestNote(null);
       } finally {
@@ -124,19 +99,7 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [user, dateKey]);
-
-  const preps = useMemo(() => {
-    if (!plans?.preps) return [];
-    return Object.values(plans.preps)
-      .filter(Boolean)
-      .map(p => ({
-        id: p.id || p.name,
-        name: p.name || "Prep",
-        objective: p.objective || "",
-        performanceGoal: p.performanceGoal || ""
-      }));
-  }, [plans]);
+  }, [user]);
 
   return (
     <div className="space-y-6">
@@ -148,18 +111,11 @@ export default function Dashboard() {
           </div>
           <h1 className="text-2xl font-bold text-sky-900">Dashboard</h1>
           <p className="mt-1 text-sm text-sky-700">
-            Today’s plan, your top tasks, and your latest note. Everything else can wait.
+            Your top tasks and your latest note. Everything else can wait.
           </p>
         </div>
 
         <div className="flex gap-2">
-          <Link
-            to="/dailyplan"
-            className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-          >
-            <PlusCircle className="h-4 w-4" />
-            New Plan
-          </Link>
           <Link
             to="/teachernotes"
             className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-sky-900 ring-1 ring-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-400"
@@ -177,53 +133,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Single column stack: Today -> Checklist -> Latest Note */}
+      {/* Checklist and latest note */}
       <div className="grid grid-cols-1 gap-6">
-        <Card
-          title="Today at a Glance"
-          icon={CalendarDays}
-          action={
-            <Link
-              to="/dailyplan"
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-sky-900 ring-1 ring-sky-300 hover:bg-sky-50"
-            >
-              Open Daily Plan <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          }
-        >
-          {loading ? (
-            <div className="text-sm text-sky-700">Loading plans…</div>
-          ) : preps.length === 0 ? (
-            <div className="text-sm text-sky-700">
-              No plan found for today. Start one from the button above.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {preps.map(p => (
-                <motion.div
-                  key={p.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-xl border border-sky-100 bg-sky-50/50 p-3"
-                >
-                  <div className="mb-1 text-sm font-semibold text-sky-900">{p.name}</div>
-                  {p.objective && (
-                    <Line label="Objective">
-                      <span className="line-clamp-2">{p.objective}</span>
-                    </Line>
-                  )}
-                  {p.performanceGoal && (
-                    <div className="mt-2">
-                      <Line label="Performance Goal">
-                        <span className="line-clamp-2">{p.performanceGoal}</span>
-                      </Line>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </Card>
 
         <Card
           title="Checklist Highlights"

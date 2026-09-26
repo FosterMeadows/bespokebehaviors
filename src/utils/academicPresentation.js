@@ -54,3 +54,28 @@ export function getAcademicStatusTone(value) {
   if (value === "canceled" || value === "cancelled") return "border-slate-200 bg-slate-100 text-slate-600";
   return "border-sky-200 bg-sky-50 text-sky-800";
 }
+
+export function formatStudentDetail(grade, homeroom) {
+  const cleanHomeroom = String(homeroom || "").trim();
+  const homeroomLabel = cleanHomeroom
+    ? /\bhr$/i.test(cleanHomeroom) ? cleanHomeroom : `${cleanHomeroom} HR`
+    : "";
+  return [
+    grade ? `Grade ${grade}` : "",
+    homeroomLabel
+  ].filter(Boolean).join(" • ");
+}
+
+export function formatOldestWorkAge(tasks = []) {
+  const assignedDates = tasks
+    .map(task => task.assignedAt?.toDate?.() || (task.assignedAt?.seconds ? new Date(task.assignedAt.seconds * 1000) : null))
+    .filter(Boolean);
+  if (assignedDates.length === 0) return "Oldest Work: Unknown";
+  const oldest = new Date(Math.min(...assignedDates.map(date => date.getTime())));
+  const today = new Date();
+  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOldest = new Date(oldest.getFullYear(), oldest.getMonth(), oldest.getDate());
+  const days = Math.max(0, Math.floor((startToday - startOldest) / 86400000));
+  if (days === 0) return "Oldest Work: Today";
+  return `Oldest Work: ${days} ${days === 1 ? "Day" : "Days"}`;
+}
