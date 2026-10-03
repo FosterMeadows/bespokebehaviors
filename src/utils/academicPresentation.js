@@ -1,3 +1,5 @@
+import { summarizeAcademicAssignmentAges } from "./academicAging.js";
+
 export function formatSubjectLabel(subject) {
   if (subject === "Sci" || subject === "Science") return "Science";
   if (subject === "SS" || subject === "Social Studies") return "Social Studies";
@@ -66,16 +68,9 @@ export function formatStudentDetail(grade, homeroom) {
   ].filter(Boolean).join(" • ");
 }
 
-export function formatOldestWorkAge(tasks = []) {
-  const assignedDates = tasks
-    .map(task => task.assignedAt?.toDate?.() || (task.assignedAt?.seconds ? new Date(task.assignedAt.seconds * 1000) : null))
-    .filter(Boolean);
-  if (assignedDates.length === 0) return "Oldest Work: Unknown";
-  const oldest = new Date(Math.min(...assignedDates.map(date => date.getTime())));
-  const today = new Date();
-  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const startOldest = new Date(oldest.getFullYear(), oldest.getMonth(), oldest.getDate());
-  const days = Math.max(0, Math.floor((startToday - startOldest) / 86400000));
+export function formatOldestWorkAge(tasks = [], now = new Date()) {
+  const { oldestDays: days } = summarizeAcademicAssignmentAges(tasks, now);
+  if (days === null) return "Oldest Work: Unknown";
   if (days === 0) return "Oldest Work: Today";
   return `Oldest Work: ${days} ${days === 1 ? "Day" : "Days"}`;
 }

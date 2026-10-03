@@ -18,8 +18,10 @@ import {
   formatSubjectLabel,
   ACADEMIC_TASK_STATUS_OPTIONS
 } from "../../utils/academicPresentation";
+import { AssignmentAge } from "./AssignmentAge.jsx";
+import { isOpenAcademicAssignment } from "../../utils/academicAging.js";
 
-export function StudentSlideOver({ open, studentId, daysServed = 0, selectedToday = false, onClose, onRemoveStudent, onConfirm }) {
+export function StudentSlideOver({ open, studentId, agingNow, daysServed = 0, selectedToday = false, onClose, onRemoveStudent, onConfirm }) {
   const { user } = useContext(AuthContext);
 
   const [assignments, setAssignments] = useState([]);
@@ -164,7 +166,7 @@ export function StudentSlideOver({ open, studentId, daysServed = 0, selectedToda
     const tq = query(collection(db, "tasks"), where("active", "==", true), where("studentId", "==", studentId));
     const unsubT = onSnapshot(
       tq,
-      snap => setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      snap => setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOpenAcademicAssignment)),
       () => setDrawerError("Assignments could not be loaded for this student.")
     );
 
@@ -326,6 +328,7 @@ export function StudentSlideOver({ open, studentId, daysServed = 0, selectedToda
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getSubjectTone(t.subject)}`}>
                                 {formatSubjectLabel(t.subject || "ELA")}
                               </span>
+                              <AssignmentAge task={t} now={agingNow} />
                               {(t.teacher || t.assignedAt) && (
                                 <span className="text-xs leading-5 text-slate-500">
                                   {t.teacher ? `Assigned by ${t.teacher}` : "Assigned"}

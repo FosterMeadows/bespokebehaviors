@@ -10,6 +10,7 @@ import {
   getSubjectTone
 } from "../../utils/academicPresentation";
 import { Avatar } from "./Avatar.jsx";
+import { selectAcademicBacklog, summarizeAcademicAssignmentAges } from "../../utils/academicAging.js";
 
 export function SetupLayout({
   laneLabel,
@@ -17,6 +18,9 @@ export function SetupLayout({
   studentsList,
   attendanceCounts,
   byStudent,
+  agingNow,
+  tasksLoaded,
+  tasksLoadError,
   deckItems,
   taskForm,
   setTaskForm,
@@ -30,7 +34,7 @@ export function SetupLayout({
   onViewSession
 }) {
   const [addWorkOpen, setAddWorkOpen] = useState(false);
-  const [backlogFilters, setBacklogFilters] = useState({ search: "", subject: "", sort: "name" });
+  const [backlogFilters, setBacklogFilters] = useState({ search: "", subject: "", age: "", sort: "name" });
   const clearTaskForm = () => setTaskForm(tf => ({ ...tf, studentIds: [], title: "", notes: "" }));
 
   const backlogFilterOptions = useMemo(() => {
@@ -39,28 +43,10 @@ export function SetupLayout({
     return { subjects };
   }, [byStudent]);
 
-  const visibleBacklog = useMemo(() => {
-    const search = backlogFilters.search.trim().toLowerCase();
-    const rows = byStudent.filter(([sid, tasks]) => {
-      const student = studentsMap[sid] || {};
-      const searchable = `${student.displayName || sid} ${student.homeroom || ""}`.toLowerCase();
-      if (search && !searchable.includes(search)) return false;
-      if (backlogFilters.subject && !tasks.some((task) => task.subject === backlogFilters.subject)) return false;
-      return true;
-    });
-
-    return [...rows].sort((a, b) => {
-      const [aSid] = a;
-      const [bSid] = b;
-      if (backlogFilters.sort === "oldest") {
-        const oldest = (tasks) => Math.min(...tasks.map(task => task.assignedAt?.toMillis?.() || (task.assignedAt?.seconds ? task.assignedAt.seconds * 1000 : Infinity)));
-        const aOldest = oldest(a[1]);
-        const bOldest = oldest(b[1]);
-        if (aOldest !== bOldest) return aOldest - bOldest;
-      }
-      return String(studentsMap[aSid]?.displayName || aSid).localeCompare(String(studentsMap[bSid]?.displayName || bSid));
-    });
-  }, [backlogFilters, byStudent, studentsMap]);
+  const ageSummary = useMemo(() => summarizeAcademicAssignmentAges(byStudent.flatMap(([, tasks]) => tasks), agingNow), [byStudent, agingNow]);
+  const visibleBacklog = useMemo(() => selectAcademicBacklog(byStudent, studentsMap, backlogFilters, agingNow), [backlogFilters, byStudent, studentsMap, agingNow]);
+  const matchingCount = visibleBacklog.reduce((count, [, tasks]) => count + tasks.length, 0);
+  const filtersActive = Boolean(backlogFilters.search || backlogFilters.subject || backlogFilters.age);
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[22rem_minmax(0,1fr)]">
@@ -242,17 +228,29 @@ export function SetupLayout({
       </section>
 
       <section className="order-2 min-w-0 space-y-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm xl:col-start-2 xl:row-start-2">
-        <div className="sticky top-20 z-30 rounded-lg border border-slate-200 border-t-4 border-t-sky-500 bg-gradient-to-r from-sky-50/50 via-white to-sky-50/50 p-3 shadow-sm backdrop-blur-sm xl:flex xl:items-center xl:gap-3">
+        <div className="sticky top-20 z-30 space-y-3 rounded-lg border border-slate-200 border-t-4 border-t-sky-500 bg-gradient-to-r from-sky-50/50 via-white to-sky-50/50 p-3 shadow-sm backdrop-blur-sm">
           <div className="flex shrink-0 items-center gap-2">
             <h2 className="text-base font-bold text-slate-950">Academic Backlog</h2>
             <span aria-label={`${byStudent.length} students with work`} className="inline-flex min-w-6 items-center justify-center rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-extrabold text-sky-900">{byStudent.length}</span>
-            {visibleBacklog.length !== byStudent.length && (
-              <span className="text-xs font-medium text-slate-500">Showing {visibleBacklog.length}</span>
-            )}
+          </div>
+
+          <div role="region" aria-label={`${laneLabel} assignment age summary`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-5 text-slate-600">
+            {tasksLoadError ? <span role="status">Work ages unavailable until assignments load.</span> : !tasksLoaded ? <span role="status">Loading work ages…</span> : ageSummary.open > 0 ? <>
+              {ageSummary.needsAttention > 0 ? <>
+                <button type="button" onClick={() => setBacklogFilters(current => ({ ...current, age: "attention", sort: "oldest", search: "", subject: "" }))}
+                  className="rounded font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4 hover:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+                  {ageSummary.needsAttention} {ageSummary.needsAttention === 1 ? "assignment needs" : "assignments need"} attention
+                </button>
+                <span>{ageSummary.aging} aging · <strong className="font-bold text-amber-950">{ageSummary.stuck} stuck</strong></span>
+                <span>Across {ageSummary.attentionStudents} {ageSummary.attentionStudents === 1 ? "student" : "students"}</span>
+              </> : <span>{ageSummary.unknown ? "No known aging or stuck work" : "No aging or stuck work"}</span>}
+              {ageSummary.oldestDays !== null && <span>Oldest {ageSummary.oldestDays === 0 ? "today" : `${ageSummary.oldestDays} ${ageSummary.oldestDays === 1 ? "day" : "days"}`}</span>}
+              {ageSummary.unknown > 0 && <span>{ageSummary.unknown} {ageSummary.unknown === 1 ? "assignment has" : "assignments have"} unknown age</span>}
+            </> : <span>No open assignments</span>}
           </div>
 
         {byStudent.length > 0 && (
-          <div className="mt-3 grid flex-1 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)] xl:mt-0">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_repeat(3,minmax(8rem,1fr))]">
             <label className="relative block">
               <span className="sr-only">Search students</span>
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -273,6 +271,7 @@ export function SetupLayout({
               >
                 <option value="name">Name A–Z</option>
                 <option value="oldest">Oldest work first</option>
+                <option value="attention">Most attention needed</option>
               </select>
             </label>
 
@@ -287,11 +286,31 @@ export function SetupLayout({
                 {backlogFilterOptions.subjects.map((subject) => <option key={subject} value={subject}>{formatSubjectLabel(subject)}</option>)}
               </select>
             </label>
+            <label>
+              <span className="sr-only">Filter by work age</span>
+              <select
+                value={backlogFilters.age}
+                onChange={(event) => setBacklogFilters(current => ({ ...current, age: event.target.value }))}
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="">All work ages</option>
+                <option value="attention">Needs Attention</option>
+                <option value="aging">Aging</option>
+                <option value="stuck">Stuck</option>
+                <option value="fresh">Fresh</option>
+                <option value="unknown">Age unknown</option>
+              </select>
+            </label>
           </div>
         )}
+        {filtersActive && <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <span>{matchingCount} matching {matchingCount === 1 ? "assignment" : "assignments"} across {visibleBacklog.length} {visibleBacklog.length === 1 ? "student" : "students"} · Open details for all work</span>
+          <button type="button" onClick={() => setBacklogFilters(current => ({ ...current, search: "", subject: "", age: "" }))}
+            className="rounded px-1 font-semibold text-sky-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">Clear filters</button>
+        </div>}
         </div>
 
-        {byStudent.length === 0 && (
+        {tasksLoaded && byStudent.length === 0 && (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
             <div className="text-sm font-semibold text-slate-800">Start with a student who needs make-up work.</div>
             <div className="mt-1 text-sm text-slate-500">Use Add Work below to create the first assignment.</div>
@@ -314,6 +333,7 @@ export function SetupLayout({
               grade={studentsMap[sid]?.grade || ""}
               days={attendanceCounts[sid] || 0}
               tasks={list}
+              agingNow={agingNow}
               staged={deckItems.includes(sid)}
               onStage={() => onToggleDeck(sid, true)}
               onUnstage={() => onToggleDeck(sid, false)}
@@ -343,18 +363,18 @@ export function SetupLayout({
 }
 
 function BacklogStudentRow({
-  name, homeroom, grade, days, staged, tasks = [],
+  name, homeroom, grade, days, staged, tasks = [], agingNow,
   onStage, onUnstage, onOpen
 }) {
   const studentDetail = formatStudentDetail(grade, homeroom);
   const subjectCounts = tasks.reduce((counts, task) => {
-    if (!task.active || task.state === "completed" || task.state === "canceled") return counts;
     const subject = task.subject || "Other";
     counts[subject] = (counts[subject] || 0) + 1;
     return counts;
   }, {});
   const subjectEntries = Object.entries(subjectCounts);
-  const oldestWorkAge = formatOldestWorkAge(tasks);
+  const oldestWorkAge = formatOldestWorkAge(tasks, agingNow);
+  const ageSummary = summarizeAcademicAssignmentAges(tasks, agingNow);
 
   return (
     <article className="group relative grid min-h-20 grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-4 gap-y-2 border-b border-slate-200 bg-white px-4 py-2.5 transition-colors last:border-b-0 hover:bg-sky-50/40 xl:grid-cols-[minmax(10rem,0.9fr)_minmax(12rem,1.35fr)_minmax(9rem,0.75fr)_8rem]">
@@ -385,7 +405,12 @@ function BacklogStudentRow({
       </div>
 
       <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex flex-col gap-0.5 text-[13px] tabular-nums xl:col-start-3 xl:row-start-1">
+        {ageSummary.needsAttention > 0 && <div className="flex flex-wrap gap-1 text-xs">
+          {ageSummary.stuck > 0 && <span className="rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 font-bold text-amber-950">{ageSummary.stuck} stuck</span>}
+          {ageSummary.aging > 0 && <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-medium text-slate-700">{ageSummary.aging} aging</span>}
+        </div>}
         <span className="font-semibold text-slate-900">{oldestWorkAge}</span>
+        {ageSummary.unknown > 0 && ageSummary.oldestDays !== null && <span className="text-xs text-slate-500">{ageSummary.unknown} with unknown age</span>}
         <span className="font-medium text-slate-600">{days} {days === 1 ? "Day" : "Days"} Served</span>
       </div>
 

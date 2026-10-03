@@ -24,6 +24,7 @@ import { WorkspaceStatus, AcademicSuccessToast, ConfirmationDialog } from "../co
 import { LiveGrid } from "../components/academic/LiveGrid.jsx";
 import { SetupLayout } from "../components/academic/SetupLayout.jsx";
 import { StudentSlideOver } from "../components/academic/StudentSlideOver.jsx";
+import { isOpenAcademicAssignment } from "../utils/academicAging.js";
 
 // -------------------------------------------------
 // AcademicDashboard — Setup (strip + add + waiting list) and Live (student workbench)
@@ -53,6 +54,9 @@ export default function AcademicDashboard() {
   const activeLane = availableLanes.find(lane => lane.id === selectedLaneId) || availableLanes[0] || ACADEMIC_SESSION_LANES[0];
 
   const [tasks, setTasks] = useState([]);                // active tasks
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+  const [tasksLoadError, setTasksLoadError] = useState(false);
+  const [agingNow, setAgingNow] = useState(() => new Date());
   const [deckItems, setDeckItems] = useState([]);        // studentId[] for today
   const [attendanceCounts, setAttendanceCounts] = useState({}); // sid -> integer days served
   const [attendanceToday, setAttendanceToday] = useState({}); // sid -> true when present today
@@ -85,6 +89,20 @@ export default function AcademicDashboard() {
   const [confirmation, setConfirmation] = useState(null);
   const [dailySession, setDailySession] = useState(null);
   const [laneSessions, setLaneSessions] = useState({});
+
+  // Reclassify on a school-day rollover even if no Firestore record changes.
+  // Focus/visibility refresh also covers sleeping laptops and background tabs.
+  useEffect(() => {
+    const refreshAge = () => setAgingNow(new Date());
+    const timer = setInterval(refreshAge, 60_000);
+    window.addEventListener("focus", refreshAge);
+    document.addEventListener("visibilitychange", refreshAge);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshAge);
+      document.removeEventListener("visibilitychange", refreshAge);
+    };
+  }, []);
 
   useEffect(() => {
     if (!availableLanes.length) return;
@@ -167,18 +185,25 @@ export default function AcademicDashboard() {
 
   // Subscribe: active tasks (for pending counts) with fallback
   useEffect(() => {
+    setTasksLoaded(false);
+    setTasksLoadError(false);
     if (!academicAllowed || !studentsLoaded) return;
     if (isDevOwner) {
       setTasks([]);
+      setTasksLoaded(true);
       return;
     }
     const visibleIds = Object.keys(studentsMap);
     if (!visibleIds.length) {
       setTasks([]);
+      setTasksLoaded(true);
       return;
     }
     const coll = collection(db, "tasks");
     const chunkRows = new Map();
+    const loadedChunks = new Set();
+    const failedChunks = new Set();
+    const chunks = chunkValues(visibleIds);
     const publish = () => setTasks(
       [...chunkRows.values()].flat().sort((a, b) => {
         const aTime = a.lastUpdated?.toMillis?.() || a.lastUpdated?.seconds || 0;
@@ -186,13 +211,22 @@ export default function AcademicDashboard() {
         return bTime - aTime;
       })
     );
-    const unsubs = chunkValues(visibleIds).map((ids, index) => onSnapshot(
+    const unsubs = chunks.map((ids, index) => onSnapshot(
       query(coll, where("active", "==", true), where("studentId", "in", ids)),
       snap => {
+        loadedChunks.add(index);
+        failedChunks.delete(index);
         chunkRows.set(index, snap.docs.map(d => ({ id: d.id, ...d.data() })));
         publish();
+        setTasksLoadError(failedChunks.size > 0);
+        setTasksLoaded(loadedChunks.size === chunks.length && failedChunks.size === 0);
       },
-      () => setSessionError("Academic assignments could not be loaded.")
+      () => {
+        failedChunks.add(index);
+        setTasksLoadError(true);
+        setTasksLoaded(false);
+        setSessionError("Academic assignments could not be loaded.");
+      }
     ));
     return () => unsubs.forEach(unsub => unsub());
   }, [academicAllowed, studentsLoaded, studentsMap, isDevOwner]);
@@ -293,7 +327,7 @@ export default function AcademicDashboard() {
   const byStudent = useMemo(() => {
     const m = new Map();
     for (const t of tasks) {
-      if (!laneStudentsMap[t.studentId]) continue;
+      if (!laneStudentsMap[t.studentId] || !isOpenAcademicAssignment(t)) continue;
       if (!m.has(t.studentId)) m.set(t.studentId, []);
       m.get(t.studentId).push(t);
     }
@@ -726,6 +760,9 @@ export default function AcademicDashboard() {
           studentsList={laneStudentsList}
           attendanceCounts={attendanceCounts}
           byStudent={byStudent}
+          agingNow={agingNow}
+          tasksLoaded={tasksLoaded}
+          tasksLoadError={tasksLoadError}
           deckItems={deckItems}
           taskForm={taskForm}
           setTaskForm={setTaskForm}
@@ -743,6 +780,7 @@ export default function AcademicDashboard() {
       <StudentSlideOver
         open={drawer.open}
         studentId={drawer.studentId}
+        agingNow={agingNow}
         daysServed={attendanceCounts[drawer.studentId] || 0}
         selectedToday={deckItems.includes(drawer.studentId)}
         onClose={() => setDrawer({ open: false, studentId: null })}
