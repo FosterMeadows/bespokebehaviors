@@ -241,7 +241,7 @@ export function SetupLayout({
                   className="rounded font-semibold text-slate-900 underline decoration-slate-300 underline-offset-4 hover:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
                   {ageSummary.needsAttention} {ageSummary.needsAttention === 1 ? "assignment needs" : "assignments need"} attention
                 </button>
-                <span>{ageSummary.aging} aging · <strong className="font-bold text-amber-950">{ageSummary.stuck} stuck</strong></span>
+                <span>{ageSummary.aging} Aging · <strong className="font-bold text-amber-950">{ageSummary.stuck} Stuck</strong></span>
                 <span>Across {ageSummary.attentionStudents} {ageSummary.attentionStudents === 1 ? "student" : "students"}</span>
               </> : <span>{ageSummary.unknown ? "No known aging or stuck work" : "No aging or stuck work"}</span>}
               {ageSummary.oldestDays !== null && <span>Oldest {ageSummary.oldestDays === 0 ? "today" : `${ageSummary.oldestDays} ${ageSummary.oldestDays === 1 ? "day" : "days"}`}</span>}
@@ -406,8 +406,8 @@ function BacklogStudentRow({
 
       <div className="pointer-events-none relative z-10 col-start-1 row-start-3 flex flex-col gap-0.5 text-[13px] tabular-nums xl:col-start-3 xl:row-start-1">
         {ageSummary.needsAttention > 0 && <div className="flex flex-wrap gap-1 text-xs">
-          {ageSummary.stuck > 0 && <span className="rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 font-bold text-amber-950">{ageSummary.stuck} stuck</span>}
-          {ageSummary.aging > 0 && <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-medium text-slate-700">{ageSummary.aging} aging</span>}
+          {ageSummary.stuck > 0 && <span className="rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 font-bold text-amber-950">{ageSummary.stuck} Stuck</span>}
+          {ageSummary.aging > 0 && <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-medium text-slate-700">{ageSummary.aging} Aging</span>}
         </div>}
         <span className="font-semibold text-slate-900">{oldestWorkAge}</span>
         {ageSummary.unknown > 0 && ageSummary.oldestDays !== null && <span className="text-xs text-slate-500">{ageSummary.unknown} with unknown age</span>}
