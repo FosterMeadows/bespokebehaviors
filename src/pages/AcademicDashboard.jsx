@@ -18,7 +18,7 @@ import {
 } from "../services/academic";
 import { query, collection, orderBy, where, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
-import { todayKey } from "../utils/date";
+import { todayKey, toDayKey } from "../utils/date";
 import { BookOpenCheck, Undo2 } from "lucide-react";
 import { WorkspaceStatus, AcademicSuccessToast, ConfirmationDialog } from "../components/academic/AcademicFeedback.jsx";
 import { LiveGrid } from "../components/academic/LiveGrid.jsx";
@@ -57,6 +57,8 @@ export default function AcademicDashboard() {
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [tasksLoadError, setTasksLoadError] = useState(false);
   const [agingNow, setAgingNow] = useState(() => new Date());
+  const schoolDay = toDayKey(agingNow);
+  const sessionScopeKey = academicLaneDocId(activeLane.id, schoolDay);
   const [deckItems, setDeckItems] = useState([]);        // studentId[] for today
   const [attendanceCounts, setAttendanceCounts] = useState({}); // sid -> integer days served
   const [attendanceToday, setAttendanceToday] = useState({}); // sid -> true when present today
@@ -65,12 +67,14 @@ export default function AcademicDashboard() {
   // UI mode: "setup" | "live"
   const [mode, setMode] = useState("setup");
   const sessionStatusRef = useRef(null);
-  const [sessionReadyLaneId, setSessionReadyLaneId] = useState(null);
+  const [sessionReadyKey, setSessionReadyKey] = useState(null);
 
   // Students: map + list for picker
   const [studentsMap, setStudentsMap] = useState({});    // sid -> student doc
   const [studentsList, setStudentsList] = useState([]);  // [{id,name,homeroom,grade}]
   const [studentsLoaded, setStudentsLoaded] = useState(false);
+  const [studentsError, setStudentsError] = useState("");
+  const [studentsRetry, setStudentsRetry] = useState(0);
   const laneStudentsMap = useMemo(() => Object.fromEntries(
     Object.entries(studentsMap).filter(([, student]) => String(student.grade || "") === activeLane.grade)
   ), [activeLane.grade, studentsMap]);
@@ -87,8 +91,11 @@ export default function AcademicDashboard() {
   const [sessionMessage, setSessionMessage] = useState("");
   const [sessionError, setSessionError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
+  const confirmationRef = useRef(null);
   const [dailySession, setDailySession] = useState(null);
   const [laneSessions, setLaneSessions] = useState({});
+
+  useEffect(() => { confirmationRef.current = confirmation; }, [confirmation]);
 
   // Reclassify on a school-day rollover even if no Firestore record changes.
   // Focus/visibility refresh also covers sleeping laptops and background tabs.
@@ -142,6 +149,7 @@ export default function AcademicDashboard() {
   // Subscribe: students (names for UI, picker)
   useEffect(() => {
     if (!academicAllowed) return;
+    setStudentsError("");
     if (isDevOwner) {
       setStudentsMap({});
       setStudentsList([]);
@@ -176,12 +184,16 @@ export default function AcademicDashboard() {
         }
         setStudentsMap(map);
         setStudentsList(list.sort((a, b) => a.name.localeCompare(b.name)));
+        setStudentsError("");
         setStudentsLoaded(true);
       },
-      () => setSessionError("Students could not be loaded for your assigned grades.")
+      () => {
+        setStudentsLoaded(false);
+        setStudentsError("Students could not be loaded for your assigned grades. Try again.");
+      }
     );
     return () => unsub();
-  }, [academicAllowed, profile, isDevOwner, allowedGrades]);
+  }, [academicAllowed, profile, isDevOwner, allowedGrades, studentsRetry]);
 
   // Subscribe: active tasks (for pending counts) with fallback
   useEffect(() => {
@@ -240,7 +252,7 @@ export default function AcademicDashboard() {
     }
     setDeckItems([]);
     const visibleIds = new Set(Object.keys(laneStudentsMap));
-    const ref = doc(db, "deck", academicLaneDocId(activeLane.id));
+    const ref = doc(db, "deck", academicLaneDocId(activeLane.id, schoolDay));
     const unsub = onSnapshot(
       ref,
       snap => {
@@ -250,11 +262,13 @@ export default function AcademicDashboard() {
       () => setSessionError("Today’s session roster could not be loaded.")
     );
     return () => unsub();
-  }, [academicAllowed, user, studentsLoaded, laneStudentsMap, isDevOwner, activeLane.id]);
+  }, [academicAllowed, user, studentsLoaded, laneStudentsMap, isDevOwner, activeLane.id, schoolDay]);
 
   useEffect(() => {
     if (!academicAllowed || isDevOwner) return undefined;
     sessionStatusRef.current = null;
+    setDailySession(null);
+    setSessionReadyKey(null);
     return listenTodayAcademicSession(
       activeLane.id,
       session => {
@@ -262,28 +276,40 @@ export default function AcademicDashboard() {
         const previousStatus = sessionStatusRef.current;
         sessionStatusRef.current = nextStatus;
         setDailySession(session);
-        setSessionReadyLaneId(activeLane.id);
+        setSessionReadyKey(sessionScopeKey);
         if (previousStatus === null || previousStatus !== nextStatus) {
           setMode(nextStatus === "live" ? "live" : "setup");
         }
       },
-      () => setSessionError("Today’s Academic session record could not be loaded.")
+      () => setSessionError("Today’s Academic session record could not be loaded."),
+      schoolDay
     );
-  }, [academicAllowed, isDevOwner, activeLane.id]);
+  }, [academicAllowed, isDevOwner, activeLane.id, schoolDay, sessionScopeKey]);
 
   useEffect(() => {
     if (!academicAllowed || isDevOwner) return undefined;
+    setLaneSessions({});
     const unsubs = availableLanes.map(lane => listenTodayAcademicSession(
       lane.id,
       session => setLaneSessions(current => ({ ...current, [lane.id]: session })),
-      () => setSessionError("Academic session statuses could not be loaded.")
+      () => setSessionError("Academic session statuses could not be loaded."),
+      schoolDay
     ));
     return () => unsubs.forEach(unsub => unsub());
-  }, [academicAllowed, isDevOwner, availableLanes]);
+  }, [academicAllowed, isDevOwner, availableLanes, schoolDay]);
+
+  useEffect(() => {
+    setAttendanceUndo(null);
+    setDrawer({ open: false, studentId: null });
+    confirmationRef.current?.resolve(false);
+    setConfirmation(null);
+    setSessionMessage("");
+  }, [schoolDay]);
 
   // Subscribe: attendance (days served counts)
   useEffect(() => {
     if (!academicAllowed || !studentsLoaded) return;
+    setAttendanceToday({});
     if (isDevOwner) {
       setAttendanceCounts({});
       setAttendanceToday({});
@@ -300,12 +326,11 @@ export default function AcademicDashboard() {
     const publish = () => {
         const counts = {};
         const presentToday = {};
-        const today = todayKey();
         for (const r of [...chunkRows.values()].flat()) {
           if (!r.studentId || !r.date) continue;
           if (!counts[r.studentId]) counts[r.studentId] = new Set();
           counts[r.studentId].add(r.date);
-          if (String(r.date) === today) presentToday[r.studentId] = true;
+          if (String(r.date) === schoolDay) presentToday[r.studentId] = true;
         }
         const flat = {};
         for (const [sid, setDates] of Object.entries(counts)) flat[sid] = setDates.size;
@@ -321,7 +346,7 @@ export default function AcademicDashboard() {
       () => setSessionError("Attendance history could not be loaded.")
     ));
     return () => unsubs.forEach(unsub => unsub());
-  }, [academicAllowed, studentsLoaded, studentsMap, isDevOwner]);
+  }, [academicAllowed, studentsLoaded, studentsMap, isDevOwner, schoolDay]);
 
   // Group tasks by student for "Students Waiting"
   const byStudent = useMemo(() => {
@@ -336,6 +361,15 @@ export default function AcademicDashboard() {
 
   if (!user) return <div className="p-4">Sign in required.</div>;
   if (!academicAllowed) return <div className="p-4">Access denied.</div>;
+  if (studentsError) return (
+    <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+      <p>{studentsError}</p>
+      <button type="button" onClick={() => setStudentsRetry(attempt => attempt + 1)}
+        className="mt-3 rounded-md border border-red-300 bg-white px-3 py-2 font-semibold hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+        Retry loading students
+      </button>
+    </div>
+  );
   if (!studentsLoaded) return <div className="p-4">Loading...</div>;
   // Actions
   async function confirmLaneMove(error, studentId, retry) {
@@ -656,8 +690,8 @@ export default function AcademicDashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <WorkspaceStatus mode={mode} count={deckItems.length} hostName={dailySession?.hostName || ""} sessionReady={isDevOwner || sessionReadyLaneId === activeLane.id} sessionIsLive={sessionReadyLaneId === activeLane.id && dailySession?.status === "live"} />
-          {sessionReadyLaneId === activeLane.id && dailySession?.status === "live" && (
+          <WorkspaceStatus mode={mode} count={deckItems.length} hostName={dailySession?.hostName || ""} sessionReady={isDevOwner || sessionReadyKey === sessionScopeKey} sessionIsLive={sessionReadyKey === sessionScopeKey && dailySession?.status === "live"} />
+          {sessionReadyKey === sessionScopeKey && dailySession?.status === "live" && (
             <button
               type="button"
               onClick={() => setMode(mode === "live" ? "setup" : "live")}
@@ -682,7 +716,7 @@ export default function AcademicDashboard() {
               onClick={() => {
                 setSelectedLaneId(lane.id);
                 setDeckItems([]);
-                setSessionReadyLaneId(null);
+                setSessionReadyKey(null);
                 setDailySession(laneSession || null);
                 setMode(laneSession?.status === "live" ? "live" : "setup");
                 setSessionError("");
@@ -731,7 +765,7 @@ export default function AcademicDashboard() {
           )}
       </AcademicSuccessToast>
 
-      {sessionReadyLaneId !== activeLane.id && !isDevOwner ? (
+      {sessionReadyKey !== sessionScopeKey && !isDevOwner ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600" role="status">Loading session…</div>
       ) : mode === "live" ? (
         <LiveGrid
@@ -777,7 +811,8 @@ export default function AcademicDashboard() {
         />
       )}
 
-      <StudentSlideOver
+      {drawer.open && drawer.studentId && <StudentSlideOver
+        key={drawer.studentId}
         open={drawer.open}
         studentId={drawer.studentId}
         agingNow={agingNow}
@@ -786,7 +821,7 @@ export default function AcademicDashboard() {
         onClose={() => setDrawer({ open: false, studentId: null })}
         onRemoveStudent={handleDismissStudent}
         onConfirm={requestConfirmation}
-      />
+      />}
       <ConfirmationDialog request={confirmation} onResolve={resolveConfirmation} />
     </div>
   );

@@ -25,6 +25,7 @@ export function StudentSlideOver({ open, studentId, agingNow, daysServed = 0, se
   const { user } = useContext(AuthContext);
 
   const [assignments, setAssignments] = useState([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(true);
   const [saving, setSaving] = useState({});
   const [tab, setTab] = useState("assignments");
   const [drawerError, setDrawerError] = useState("");
@@ -162,12 +163,18 @@ export function StudentSlideOver({ open, studentId, agingNow, daysServed = 0, se
 
   useEffect(() => {
     if (!open || !studentId || tab !== "assignments") return;
-
+    setAssignmentsLoading(true);
     const tq = query(collection(db, "tasks"), where("active", "==", true), where("studentId", "==", studentId));
     const unsubT = onSnapshot(
       tq,
-      snap => setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOpenAcademicAssignment)),
-      () => setDrawerError("Assignments could not be loaded for this student.")
+      snap => {
+        setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOpenAcademicAssignment));
+        setAssignmentsLoading(false);
+      },
+      () => {
+        setAssignmentsLoading(false);
+        setDrawerError("Assignments could not be loaded for this student.");
+      }
     );
 
     return () => unsubT();
@@ -308,7 +315,8 @@ export function StudentSlideOver({ open, studentId, agingNow, daysServed = 0, se
             <>
               <section className="mb-5 rounded-xl bg-slate-100/70 p-3">
                 <h4 className="mb-3 px-1 font-semibold text-slate-950">Assignments</h4>
-                {assignments.length === 0 && (
+                {assignmentsLoading && assignments.length === 0 && <div role="status" className="text-sm text-slate-500">Loading assignments…</div>}
+                {!assignmentsLoading && !drawerError && assignments.length === 0 && (
                   <div className="text-sm text-slate-500">No active assignments.</div>
                 )}
                 <ul className="space-y-3">

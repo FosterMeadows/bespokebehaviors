@@ -146,8 +146,8 @@ export async function removeFromDeck(studentId, laneId) {
 // ------------------------------
 // One shared Academic session per lane, per school day
 // ------------------------------
-export function listenTodayAcademicSession(laneId, cb, onError) {
-  return onSnapshot(doc(db, "academicSessions", academicLaneDocId(laneId)), snap => {
+export function listenTodayAcademicSession(laneId, cb, onError, date = todayKey()) {
+  return onSnapshot(doc(db, "academicSessions", academicLaneDocId(laneId, date)), snap => {
     cb(snap.exists() ? { id: snap.id, ...snap.data() } : null);
   }, onError);
 }
