@@ -7,7 +7,6 @@
     "node": "22"
   },
   "dependencies": {
-    "bespokebehaviors": "file:..",
     "firebase-admin": "14.4.0",
     "firebase-functions": "7.4.0"
   },

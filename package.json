@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "test": "node scripts/run-unit-tests.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.js\"",
-    "verify": "npm run lint && npm test && npm run build && npm audit --omit=dev --audit-level=high && npm --prefix functions audit --omit=dev --audit-level=high",
+    "verify": "npm run lint && npm test && npm run build && npm audit && npm --prefix functions audit",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -44,7 +44,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.2.0",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.28",
     "tailwindcss": "^4.1.11",
     "vite": "^7.0.0",
     "vite-plugin-svgr": "^4.3.0"
