@@ -11,6 +11,7 @@ export function getSubjectTone(subject) {
   if (subject === "Sci" || subject === "Science") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (subject === "SS" || subject === "Social Studies") return "border-amber-200 bg-amber-50 text-amber-900";
   if (subject === "ELA") return "border-sky-200 bg-sky-50 text-sky-800";
+  if (subject === "Recovery") return "border-zinc-800 bg-zinc-900 text-white";
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
@@ -19,6 +20,7 @@ export function getSubjectBorderTone(subject) {
   if (subject === "Sci" || subject === "Science") return "border-l-emerald-200";
   if (subject === "SS" || subject === "Social Studies") return "border-l-amber-200";
   if (subject === "ELA") return "border-l-sky-200";
+  if (subject === "Recovery") return "border-l-zinc-800";
   return "border-l-slate-200";
 }
 

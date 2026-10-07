@@ -154,6 +154,7 @@ export function SetupLayout({
                   <option value="Math">Math</option>
                   <option value="Sci">Science</option>
                   <option value="SS">Social Studies</option>
+                  <option value="Recovery">Recovery</option>
                 </select>
               </div>
             </div>
