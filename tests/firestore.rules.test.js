@@ -1,20 +1,40 @@
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir, mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
+import { build } from "vite";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { cancelBehaviorReteach } from "../src/services/behaviorCancellation.js";
-import { behaviorSummary } from "../src/utils/behaviorRecords.js";
+import { behaviorSummary, behaviorSchoolYear } from "../src/utils/behaviorRecords.js";
+import { todayInputValue } from "../src/utils/behaviorPresentation.js";
 import { operationalWindowQueries, operationalWorkloadQueries, mergeOperationalRows } from "../src/services/operationalData.js";
 import { buildOperationalMetrics, startOfWindow } from "../src/utils/operationalMetrics.js";
 
 let environment;
+let behaviorBuildDirectory;
 
 before(async () => {
   environment = await initializeTestEnvironment({
     projectId: "checkpoint-rules-test",
     firestore: { rules: await readFile("firestore.rules", "utf8") }
   });
+  // Use the real service and Firebase transactions with the local test database.
+  const result = await build({
+    configFile: false, logLevel: "silent", plugins: [{
+      name: "behavior-rules-database", enforce: "pre",
+      resolveId(source) { if (source.endsWith("firebaseConfig")) return "\0behavior-rules-database"; },
+      load(id) { if (id === "\0behavior-rules-database") return "export const db = globalThis.__behaviorRulesDatabase;"; }
+    }],
+    build: { write: false, minify: false, lib: {
+      entry: fileURLToPath(new URL("../src/services/behavior.js", import.meta.url)), formats: ["es"]
+    }, rollupOptions: { external: ["firebase/firestore"] } }
+  });
+  await mkdir("tmp", { recursive: true });
+  behaviorBuildDirectory = await mkdtemp("tmp/behavior-rules-");
+  const output = Array.isArray(result) ? result[0].output : result.output;
+  await writeFile(join(behaviorBuildDirectory, "service.mjs"), output.find(item => item.type === "chunk").code);
 });
 
 beforeEach(async () => {
@@ -37,7 +57,14 @@ beforeEach(async () => {
   });
 });
 
-after(async () => environment?.cleanup());
+after(async () => {
+  await environment?.cleanup();
+  delete globalThis.__behaviorRulesDatabase;
+  if (behaviorBuildDirectory) {
+    await unlink(join(behaviorBuildDirectory, "service.mjs"));
+    await rmdir(behaviorBuildDirectory);
+  }
+});
 
 describe("pending reteach cancellation", () => {
   const recordId = "cancel-test";
@@ -130,6 +157,7 @@ describe("pending reteach cancellation", () => {
     nextRecord.status = "pending";
     nextRecord.thresholdAcknowledged = false;
     nextRecord.servedCountAtAssignment = 0;
+    nextRecord.pendingCountAtAssignment = 2;
     const batch = writeBatch(db);
     batch.set(doc(db, "behaviorReteaches", "next"), nextRecord);
     batch.update(doc(db, "behaviorHomeContactMilestones", milestoneId), { assignmentCount: 3, thirdReteachReached: true, triggeringReteachId: "next", lastReteachId: "next", reachedAt: serverTimestamp(), updatedAt: serverTimestamp() });
@@ -490,7 +518,8 @@ describe("grade-scoped Firestore rules", () => {
       grade: "6",
       postThreshold: false,
       thresholdAcknowledged: false,
-      servedCountAtAssignment: 5
+      servedCountAtAssignment: 5,
+      pendingCountAtAssignment: 0
     }));
     await assertFails(setDoc(doc(behaviorDb, "behaviorReteaches", "blocked-count"), {
       studentId: "s6",
@@ -498,7 +527,8 @@ describe("grade-scoped Firestore rules", () => {
       grade: "6",
       postThreshold: false,
       thresholdAcknowledged: false,
-      servedCountAtAssignment: 6
+      servedCountAtAssignment: 6,
+      pendingCountAtAssignment: 0
     }));
     await assertFails(setDoc(doc(behaviorDb, "behaviorReteaches", "blocked-override"), {
       studentId: "s6",
@@ -506,7 +536,8 @@ describe("grade-scoped Firestore rules", () => {
       grade: "6",
       postThreshold: true,
       thresholdAcknowledged: true,
-      servedCountAtAssignment: 6
+      servedCountAtAssignment: 6,
+      pendingCountAtAssignment: 0
     }));
     await assertSucceeds(setDoc(doc(ownerDb, "behaviorReteaches", "owner-override"), {
       studentId: "s6",
@@ -514,8 +545,69 @@ describe("grade-scoped Firestore rules", () => {
       grade: "6",
       postThreshold: true,
       thresholdAcknowledged: true,
-      servedCountAtAssignment: 6
+      servedCountAtAssignment: 6,
+      pendingCountAtAssignment: 0
     }));
+  });
+
+  it("counts pending reteaches toward the cutoff and preserves admin overrides", async () => {
+    const teacherDb = environment.authenticatedContext("behavior6other").firestore();
+    const adminDb = environment.authenticatedContext("admin").firestore();
+    const record = {
+      studentId: "s6", assignedByUid: "behavior6other", grade: "6",
+      postThreshold: false, thresholdAcknowledged: false, servedCountAtAssignment: 4
+    };
+    await assertSucceeds(setDoc(doc(teacherDb, "behaviorReteaches", "mixed-sixth"), { ...record, pendingCountAtAssignment: 1 }));
+    await assertFails(setDoc(doc(teacherDb, "behaviorReteaches", "mixed-seventh"), { ...record, pendingCountAtAssignment: 2 }));
+    await assertFails(setDoc(doc(teacherDb, "behaviorReteaches", "all-pending"), { ...record, servedCountAtAssignment: 0, pendingCountAtAssignment: 6 }));
+    // Older tabs must refresh instead of bypassing the pending count check.
+    await assertFails(setDoc(doc(teacherDb, "behaviorReteaches", "missing-pending"), record));
+    for (const value of [-1, "0", 0.5]) {
+      await assertFails(setDoc(doc(teacherDb, "behaviorReteaches", "invalid-pending"), { ...record, pendingCountAtAssignment: value }));
+    }
+    await assertSucceeds(setDoc(doc(adminDb, "behaviorReteaches", "mixed-admin-override"), {
+      ...record, assignedByUid: "admin", pendingCountAtAssignment: 2,
+      postThreshold: true, thresholdAcknowledged: true
+    }));
+  });
+
+  it("allows only the sixth when two teachers assign concurrently using the real service", async () => {
+    const reteachDate = todayInputValue();
+    const schoolYear = behaviorSchoolYear();
+    const payload = uid => ({
+      studentId: "s6", studentName: "Six Student", grade: "6", homeroom: "A",
+      assignedByUid: uid, assignedByName: uid, reteachDate,
+      location: "Classroom", context: "Disruption", note: "Review classroom expectations."
+    });
+    await environment.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      const batch = writeBatch(db);
+      for (let index = 0; index < 5; index++) {
+        const record = {
+          ...payload("behavior6"), schoolYear, status: index < 4 ? "served" : "pending",
+          postThreshold: false, createdAt: new Date()
+        };
+        batch.set(doc(db, "behaviorReteaches", `prior-${index}`), record);
+        batch.set(doc(db, "behaviorReteachSummaries", `prior-${index}`), behaviorSummary(record));
+      }
+      batch.set(doc(db, "behaviorHomeContactMilestones", `s6_${schoolYear}`), {
+        studentId: "s6", schoolYear, assignmentCount: 5, thirdReteachReached: true,
+        lastReteachId: "prior-4", createdAt: new Date(), updatedAt: new Date(), grandfathered: true
+      });
+      await batch.commit();
+    });
+    const services = [];
+    for (const uid of ["behavior6", "behavior6other"]) {
+      globalThis.__behaviorRulesDatabase = environment.authenticatedContext(uid).firestore();
+      services.push(await import(pathToFileURL(join(behaviorBuildDirectory, "service.mjs")).href + `?teacher=${uid}`));
+    }
+    const results = await Promise.allSettled(services.map((service, index) =>
+      service.createBehaviorReteach(payload(index === 0 ? "behavior6" : "behavior6other"))));
+    assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(results.find(result => result.status === "rejected").reason.code, "behavior/threshold-reached");
+    const count = await services[0].getBehaviorServedCount("s6");
+    assert.equal(count.served, 4);
+    assert.equal(count.pending, 2);
   });
 
   it("allows schoolwide assignment while protecting cross-grade notes", async () => {
@@ -538,6 +630,7 @@ describe("grade-scoped Firestore rules", () => {
       thresholdAcknowledged: false,
       thresholdAcknowledgedAt: null,
       servedCountAtAssignment: 2,
+      pendingCountAtAssignment: 0,
       status: "pending",
       createdAt,
       servedAt: null,
@@ -669,6 +762,7 @@ describe("grade-scoped Firestore rules", () => {
       thresholdAcknowledged: false,
       thresholdAcknowledgedAt: null,
       servedCountAtAssignment: 2,
+      pendingCountAtAssignment: 0,
       status: "pending",
       createdAt,
       servedAt: null,

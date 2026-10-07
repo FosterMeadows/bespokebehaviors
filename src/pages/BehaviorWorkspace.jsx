@@ -1,4 +1,4 @@
-import { useContext, useState, useEffect, useMemo } from "react";
+import { useContext, useState, useEffect, useMemo, useRef } from "react";
 import { AuthContext } from "../AuthContext.jsx";
 import { canOverrideBehaviorThreshold, canCancelBehaviorReteach } from "../utils/access";
 import { MOCK_STUDENTS, MOCK_COUNTS } from "../qa/behaviorFixtures.js";
@@ -27,6 +27,8 @@ import BehaviorStudentStats from "../components/BehaviorStudentStats.jsx";
 import { PendingReteaches } from "../components/behavior/PendingReteaches.jsx";
 import { MyReteaches } from "../components/behavior/MyReteaches.jsx";
 import CancelReteachDialog from "../components/CancelReteachDialog.jsx";
+import BehaviorThresholdDialog from "../components/behavior/BehaviorThresholdDialog.jsx";
+import { getBehaviorThresholdCount, behaviorThresholdMessage } from "../utils/behaviorThreshold.js";
 
 export default function BehaviorWorkspace() {
   const { user, profile } = useContext(AuthContext);
@@ -57,6 +59,8 @@ export default function BehaviorWorkspace() {
   const [form, setForm] = useState({ reteachDate: todayInputValue(), location: "", context: "", note: "" });
   const [situationEditing, setSituationEditing] = useState(true);
   const [thresholdAcknowledged, setThresholdAcknowledged] = useState(false);
+  const [thresholdNotice, setThresholdNotice] = useState(null);
+  const notifiedThresholdStudent = useRef(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -204,7 +208,14 @@ export default function BehaviorWorkspace() {
         const count = isDevOwner
           ? devCounts[selectedStudent.id] || { served: 0, buybacks: 0, adjusted: 0 }
           : await getBehaviorServedCount(selectedStudent.id);
-        if (!ignore) setServedCount(count);
+        if (!ignore) {
+          setServedCount(count);
+          if (!canOverrideThreshold && getBehaviorThresholdCount(count) >= BEHAVIOR_THRESHOLD
+            && notifiedThresholdStudent.current !== selectedStudent.id) {
+            notifiedThresholdStudent.current = selectedStudent.id;
+            setThresholdNotice({ studentName: selectedStudent.displayName, count });
+          }
+        }
       } catch (err) {
         void reportClientError(err, { source: "operation", operation: "behavior-count" });
         if (!ignore) setError(`Could not load served count: ${err.message}`);
@@ -217,7 +228,7 @@ export default function BehaviorWorkspace() {
     return () => {
       ignore = true;
     };
-  }, [devCounts, isDevOwner, selectedStudent, pending]);
+  }, [canOverrideThreshold, devCounts, isDevOwner, selectedStudent, pending]);
 
   const suggestions = useMemo(() => {
     const term = studentQuery.trim().toLowerCase();
@@ -279,10 +290,10 @@ export default function BehaviorWorkspace() {
     ? servedCount?.pending ?? pendingByStudent[selectedStudent.id] ?? 0
     : 0;
 
-  const isPostThreshold = Boolean(selectedStudent && !countLoading && servedCount?.adjusted >= BEHAVIOR_THRESHOLD);
+  const isPostThreshold = Boolean(selectedStudent && !countLoading && getBehaviorThresholdCount(servedCount) >= BEHAVIOR_THRESHOLD);
   const situationComplete = Boolean(form.location && form.context);
   const showSituationEditor = !situationComplete || situationEditing;
-  const canSubmit = selectedStudent && form.reteachDate && form.location && form.context && form.note.trim() && (!isPostThreshold || (canOverrideThreshold && thresholdAcknowledged)) && !submitting;
+  const canSubmit = selectedStudent && !countLoading && servedCount && form.reteachDate && form.location && form.context && form.note.trim() && (!isPostThreshold || (canOverrideThreshold && thresholdAcknowledged)) && !submitting;
   const disabledReason = useMemo(() => {
     if (submitting) return "";
     if (!selectedStudent) {
@@ -290,14 +301,16 @@ export default function BehaviorWorkspace() {
         ? "Choose a student from the suggestions so the reteach can be attached to the correct student record."
         : "Select a student from the suggestions.";
     }
+    if (countLoading) return "Checking the student's Reteach count.";
+    if (!servedCount) return "The student's Reteach count must be loaded before adding a Reteach.";
     if (!form.reteachDate) return "Select a date.";
     if (!form.location) return "Select a location.";
     if (!form.context) return "Select a behavior category.";
     if (!form.note.trim()) return "Enter a brief reteach note.";
-    if (isPostThreshold && !canOverrideThreshold) return "This student has reached the six-reteach threshold.";
+    if (isPostThreshold && !canOverrideThreshold) return behaviorThresholdMessage(servedCount);
     if (isPostThreshold && !thresholdAcknowledged) return "Acknowledge the escalation threshold before adding this reteach.";
     return "";
-  }, [canOverrideThreshold, form.context, form.location, form.note, form.reteachDate, isPostThreshold, selectedStudent, studentQuery, submitting, thresholdAcknowledged]);
+  }, [canOverrideThreshold, countLoading, servedCount, form.context, form.location, form.note, form.reteachDate, isPostThreshold, selectedStudent, studentQuery, submitting, thresholdAcknowledged]);
 
   function selectStudent(student) {
     const normalized = normalizeStudent(student);
@@ -310,6 +323,8 @@ export default function BehaviorWorkspace() {
   }
 
   function resetDraft() {
+    notifiedThresholdStudent.current = null;
+    setThresholdNotice(null);
     setForm({ reteachDate: todayInputValue(), location: "", context: "", note: "" });
     setSituationEditing(true);
     setThresholdAcknowledged(false);
@@ -338,6 +353,10 @@ export default function BehaviorWorkspace() {
       setError("Select a student before submitting.");
       return;
     }
+    if (isPostThreshold && !canOverrideThreshold) {
+      setThresholdNotice({ studentName: selectedStudent.displayName, count: servedCount });
+      return;
+    }
     if (!canSubmit) {
       setError("Complete all required fields before submitting.");
       return;
@@ -357,9 +376,9 @@ export default function BehaviorWorkspace() {
       return;
     }
 
-    const postThresholdAtSubmission = countAtSubmission.adjusted >= BEHAVIOR_THRESHOLD;
+    const postThresholdAtSubmission = getBehaviorThresholdCount(countAtSubmission) >= BEHAVIOR_THRESHOLD;
     if (postThresholdAtSubmission && !canOverrideThreshold) {
-      setError("This student has reached the six-reteach threshold. No additional reteach can be added.");
+      setThresholdNotice({ studentName: selectedStudent.displayName, count: countAtSubmission });
       setSubmitting(false);
       return;
     }
@@ -382,7 +401,8 @@ export default function BehaviorWorkspace() {
       context: form.context,
       postThreshold: postThresholdAtSubmission,
       thresholdAcknowledged: postThresholdAtSubmission && thresholdAcknowledged,
-      servedCountAtAssignment: countAtSubmission.adjusted
+      servedCountAtAssignment: countAtSubmission.adjusted,
+      pendingCountAtAssignment: countAtSubmission.pending || 0
     };
 
     try {
@@ -398,6 +418,9 @@ export default function BehaviorWorkspace() {
             servedPostThreshold: false
           };
         setPending((rows) => [devRecord, ...rows]);
+        setDevCounts(counts => ({ ...counts, [selectedStudent.id]: {
+          ...countAtSubmission, pending: (countAtSubmission.pending || 0) + 1
+        } }));
         setMyReteaches((rows) => [devRecord, ...rows]);
       } else {
         const created = await createBehaviorReteach(payload, { allowPostThreshold: canOverrideThreshold });
@@ -412,6 +435,11 @@ export default function BehaviorWorkspace() {
       clearForm();
       setActiveTab("serve");
     } catch (err) {
+      if (err.code === "behavior/threshold-reached") {
+        setServedCount(err.count);
+        setThresholdNotice({ studentName: selectedStudent.displayName, count: err.count });
+        return;
+      }
       void reportClientError(err, { source: "operation", operation: "behavior-create" });
       setError(`Could not create behavior reteach: ${err.message}`);
     } finally {
@@ -441,6 +469,9 @@ export default function BehaviorWorkspace() {
       const cancellation = { status: "cancelled", cancelledAt: new Date(), cancelledByUid: user.uid, cancelledByName: teacherName, cancellationReason: details.reason, cancellationNote: details.note.trim() };
       setMyReteaches(rows => rows.map(row => row.id === record.id ? { ...row, ...cancellation } : row));
       setHomeContactRequirements(rows => rows.map(row => row.reteachId === record.id && row.status === "pending" ? { ...row, ...cancellation } : row));
+      setDevCounts(counts => ({ ...counts, [record.studentId]: {
+        ...counts[record.studentId], pending: Math.max(0, (counts[record.studentId]?.pending || 0) - 1)
+      } }));
     } else {
       await cancelBehaviorReteach(record.id, details, { uid: user.uid, name: teacherName });
     }
@@ -473,6 +504,7 @@ export default function BehaviorWorkspace() {
           const nextCount = {
             ...current,
             served: nextServed,
+            pending: Math.max(0, (current.pending || 0) - 1),
             adjusted: Math.max(0, nextServed - current.buybacks),
             servedRecords: [
               ...(current.servedRecords || []),
@@ -553,6 +585,7 @@ export default function BehaviorWorkspace() {
             [undoRecord.studentId]: {
               ...current,
               served: nextServed,
+              pending: (current.pending || 0) + 1,
               adjusted: Math.max(0, nextServed - current.buybacks),
               servedRecords: (current.servedRecords || []).filter((item) => item.id !== `${undoRecord.id}-served`)
             }
@@ -760,6 +793,7 @@ export default function BehaviorWorkspace() {
         />
       )}
       {cancellingRecord && <CancelReteachDialog key={cancellingRecord.id} record={cancellingRecord} onClose={() => setCancellingRecord(null)} onConfirm={handleCancelReteach} />}
+      {thresholdNotice && <BehaviorThresholdDialog studentName={thresholdNotice.studentName} count={thresholdNotice.count} onClose={() => setThresholdNotice(null)} />}
     </div>
   );
 }

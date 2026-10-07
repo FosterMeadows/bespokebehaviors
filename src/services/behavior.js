@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
   query,
   runTransaction,
@@ -21,13 +22,13 @@ import { studentRecordEvent, studentRecordEventRef } from "./studentRecordEvents
 
 import { behaviorSchoolYear, behaviorSummary } from "../utils/behaviorRecords.js";
 import { cancelBehaviorReteach as cancelReteach } from "./behaviorCancellation.js";
+import { BEHAVIOR_THRESHOLD, getBehaviorThresholdCount, behaviorThresholdError } from "../utils/behaviorThreshold.js";
 export { behaviorSchoolYear } from "../utils/behaviorRecords.js";
+export { BEHAVIOR_THRESHOLD } from "../utils/behaviorThreshold.js";
 
 export function cancelBehaviorReteach(recordId, details, staff) {
   return cancelReteach(db, recordId, details, staff);
 }
-
-export const BEHAVIOR_THRESHOLD = 6;
 
 export const HOME_CONTACT_METHODS = ["Phone Call", "Text Message", "Email", "In Person", "Other"];
 
@@ -125,14 +126,14 @@ export function listenBehaviorAssignmentStudents(profile, onRows, onError) {
 }
 
 export async function getBehaviorServedCount(studentId) {
-  if (!studentId) return { served: 0, buybacks: 0, adjusted: 0, servedRecords: [], buybackRecords: [] };
+  if (!studentId) return { served: 0, buybacks: 0, adjusted: 0, pending: 0, servedRecords: [], buybackRecords: [] };
 
   let snap;
   let buybackSnap;
   try {
     [snap, buybackSnap] = await Promise.all([
-      getDocs(query(collection(db, "behaviorReteachSummaries"), where("studentId", "==", studentId))),
-      getDocs(query(collection(db, "behaviorBuybacks"), where("studentId", "==", studentId)))
+      getDocsFromServer(query(collection(db, "behaviorReteachSummaries"), where("studentId", "==", studentId))),
+      getDocsFromServer(query(collection(db, "behaviorBuybacks"), where("studentId", "==", studentId)))
     ]);
   } catch (err) {
     if (isPermissionDenied(err)) {
@@ -377,26 +378,24 @@ export async function recordHomeContactAttempt(requirementId, details, staff) {
 }
 
 export async function createBehaviorReteach(payload, { allowPostThreshold = false } = {}) {
-  const currentCount = await getBehaviorServedCount(payload.studentId);
-  const postThreshold = currentCount.adjusted >= BEHAVIOR_THRESHOLD;
-
-  if (postThreshold && !allowPostThreshold) {
-    throw new Error("This student has reached the six-reteach threshold. No additional reteach can be added.");
-  }
-  if (postThreshold && !payload.thresholdAcknowledged) {
-    throw new Error("Acknowledge the escalation threshold before adding this reteach.");
-  }
-
   const now = serverTimestamp();
   const recordRef = doc(collection(db, "behaviorReteaches"));
   const schoolYear = behaviorSchoolYear(payload.reteachDate);
   const milestoneRef = doc(db, "behaviorHomeContactMilestones", `${payload.studentId}_${schoolYear}`);
   const requirementRef = doc(db, "behaviorHomeContactRequirements", recordRef.id);
-  const baseAssignmentCount = currentCount.adjusted + currentCount.pending;
   let homeContactRequired = false;
 
   await runTransaction(db, async (transaction) => {
     const milestoneSnap = await transaction.get(milestoneRef);
+    // Every assignment updates this milestone. Read the count after it so a
+    // concurrent assignment retries the transaction and rechecks the cutoff.
+    const currentCount = await getBehaviorServedCount(payload.studentId);
+    const baseAssignmentCount = getBehaviorThresholdCount(currentCount);
+    const postThreshold = baseAssignmentCount >= BEHAVIOR_THRESHOLD;
+    if (postThreshold && !allowPostThreshold) throw behaviorThresholdError(currentCount);
+    if (postThreshold && !payload.thresholdAcknowledged) {
+      throw new Error("Acknowledge the escalation threshold before adding this reteach.");
+    }
     const milestone = milestoneSnap.exists() ? milestoneSnap.data() : null;
     const priorAssignmentCount = milestone
       ? Number(milestone.assignmentCount) || 0
@@ -424,6 +423,7 @@ export async function createBehaviorReteach(payload, { allowPostThreshold = fals
     thresholdAcknowledged: postThreshold && Boolean(payload.thresholdAcknowledged),
     thresholdAcknowledgedAt: postThreshold && payload.thresholdAcknowledged ? now : null,
     servedCountAtAssignment: currentCount.adjusted,
+    pendingCountAtAssignment: currentCount.pending,
     status: "pending",
     createdAt: now,
     servedAt: null,
@@ -495,6 +495,16 @@ export async function createBehaviorReteach(payload, { allowPostThreshold = fals
       },
       visibleToUids: [payload.assignedByUid]
     }));
+  }).catch(async (err) => {
+    // Rules can reject a stale milestone increment before the SDK retries.
+    // If another assignment filled the last slot, return the WVEIS notice.
+    if (!allowPostThreshold && isPermissionDenied(err)) {
+      const latestCount = await getBehaviorServedCount(payload.studentId);
+      if (getBehaviorThresholdCount(latestCount) >= BEHAVIOR_THRESHOLD) {
+        throw behaviorThresholdError(latestCount);
+      }
+    }
+    throw err;
   });
 
   return { ref: recordRef, homeContactRequired };

@@ -2,6 +2,7 @@ import { Search, MapPin, Puzzle, ClipboardCheck, AlertTriangle } from "lucide-re
 import { LOCATION_OPTIONS, BEHAVIOR_CATEGORY_OPTIONS, BEHAVIOR_THRESHOLD } from "../../services/behavior";
 import { formatLongInputDate, dateSortValue, formatShortReteachDate } from "../../utils/behaviorPresentation.js";
 import { useState } from "react";
+import { getBehaviorThresholdCount, behaviorThresholdMessage } from "../../utils/behaviorThreshold.js";
 
 export function BehaviorAssignmentForm({
   handleSubmit,
@@ -108,6 +109,7 @@ export function BehaviorAssignmentForm({
                 {isPostThreshold && canOverrideThreshold && (
                   <PostThresholdNotice
                     studentName={selectedStudent.displayName}
+                    count={servedCount}
                     acknowledged={thresholdAcknowledged}
                     onAcknowledge={setThresholdAcknowledged}
                   />
@@ -117,7 +119,7 @@ export function BehaviorAssignmentForm({
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-6 text-amber-950">
                     <div className="text-sm font-bold uppercase tracking-wide">Threshold Reached</div>
                     <p className="mt-2 text-sm leading-6">
-                      This student has six served reteaches. No additional reteach can be added.
+                      {behaviorThresholdMessage(servedCount)}
                     </p>
                   </div>
                 ) : !situationComplete ? (
@@ -367,9 +369,10 @@ function StudentSummary({ student, count, pendingCount, loading }) {
   const records = [...(count?.servedRecords || [])].sort((a, b) => dateSortValue(b.reteachDate || b.servedAt) - dateSortValue(a.reteachDate || a.servedAt));
   const visibleRecords = showAllHistory ? records : records.slice(0, 4);
   const adjusted = count?.adjusted || 0;
-  const remaining = Math.max(0, BEHAVIOR_THRESHOLD - adjusted);
-  const tone = progressTone(adjusted);
-  const thresholdPanelTone = adjusted >= 4 ? tone.tint : "bg-slate-50 ring-1 ring-slate-100";
+  const total = getBehaviorThresholdCount({ ...count, pending: pendingCount });
+  const remaining = Math.max(0, BEHAVIOR_THRESHOLD - total);
+  const tone = progressTone(total);
+  const thresholdPanelTone = total >= 4 ? tone.tint : "bg-slate-50 ring-1 ring-slate-100";
 
   return (
     <aside className={`overflow-hidden rounded-lg border border-slate-200 bg-white lg:sticky lg:top-24 lg:self-start ${tone.glow}`}>
@@ -387,20 +390,20 @@ function StudentSummary({ student, count, pendingCount, loading }) {
             <div className="h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200/70">
               <div
                 className={`h-full rounded-full ${tone.bar} transition-all`}
-                style={{ width: `${Math.min(100, (adjusted / BEHAVIOR_THRESHOLD) * 100)}%` }}
+                style={{ width: `${Math.min(100, (total / BEHAVIOR_THRESHOLD) * 100)}%` }}
                 aria-hidden="true"
               />
             </div>
             <div className="mt-2.5">
               <div className="text-sm font-semibold text-slate-900">
-                {remaining === 0 ? "Threshold Reached" : `Current Count: ${adjusted} · ${remaining} Until Threshold`}
+                Current Count: {total} · {remaining === 0 ? "Threshold Reached" : `${remaining} Until Threshold`}
               </div>
               <div className="mt-1 text-xs font-semibold text-slate-600">
-                {pendingCount} Pending Reteach{pendingCount === 1 ? "" : "es"}
+                {adjusted} Served + {pendingCount} Pending
               </div>
             </div>
             {count?.buybacks > 0 && (
-              <div className="mt-1 text-xs text-slate-600">Includes {count.buybacks} Buyback{count.buybacks === 1 ? "" : "s"}.</div>
+              <div className="mt-1 text-xs text-slate-600">Served count reflects {count.buybacks} Buyback{count.buybacks === 1 ? "" : "s"}.</div>
             )}
           </>
         )}
@@ -440,14 +443,14 @@ function StudentSummary({ student, count, pendingCount, loading }) {
   );
 }
 
-function PostThresholdNotice({ studentName, acknowledged, onAcknowledge }) {
+function PostThresholdNotice({ studentName, count, acknowledged, onAcknowledge }) {
   return (
     <div className="grid overflow-hidden rounded-lg border border-amber-300 bg-amber-50 text-amber-950 sm:grid-cols-[4rem_1fr]">
       <div className="flex min-h-full items-center justify-center bg-amber-100 px-3 py-5 text-amber-700">
         <AlertTriangle className="h-8 w-8 shrink-0" />
       </div>
       <div className="p-5">
-        <div className="text-sm font-bold">6 Reteaches served. Escalation threshold reached.</div>
+        <div className="text-sm font-bold">{getBehaviorThresholdCount(count)} Reteaches served or pending. Escalation threshold reached.</div>
         <p className="mt-1 text-sm leading-6">
           {studentName} may still receive a Reteach when it remains the appropriate response. This entry will be recorded as post-threshold.
         </p>

@@ -474,7 +474,11 @@ service cloud.firestore {
         && (canOverrideBehaviorThreshold()
           || (request.resource.data.postThreshold == false
             && request.resource.data.thresholdAcknowledged == false
-            && request.resource.data.servedCountAtAssignment < 6));
+            && request.resource.data.servedCountAtAssignment is int
+            && request.resource.data.servedCountAtAssignment >= 0
+            && request.resource.data.pendingCountAtAssignment is int
+            && request.resource.data.pendingCountAtAssignment >= 0
+            && request.resource.data.servedCountAtAssignment + request.resource.data.pendingCountAtAssignment < 6));
       allow update: if (
         validCancellation(resource.data, request.resource.data)
         && getAfter(/databases/$(database)/documents/behaviorReteachSummaries/$(recordId)).data.status == "cancelled"
