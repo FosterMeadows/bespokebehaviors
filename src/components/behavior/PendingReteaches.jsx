@@ -149,17 +149,6 @@ export function PendingReteaches({
                       <section key={record.id} aria-label={student.studentName + ": " + record.context + ", " + formatReteachDate(record.reteachDate)} className="p-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold">
-                      <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={selectedReportIds.includes(record.id)}
-                          onChange={() => toggleReport(record.id)}
-                          disabled={generatingSelectedReports}
-                          aria-label={`Select report for ${student.studentName}: ${record.context}, ${formatReteachDate(record.reteachDate)}, assigned by ${record.assignedByName || "Unknown"}`}
-                          className="h-5 w-5 rounded border-slate-300 accent-sky-700 focus:ring-2 focus:ring-sky-400"
-                        />
-                        Select report
-                      </label>
                       <span className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1 text-slate-700">
                         <UserRound className="h-4 w-4 shrink-0" />
                         Assigned by {record.assignedByName || "Unknown"}
@@ -180,7 +169,18 @@ export function PendingReteaches({
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
-
+                      <div className="flex max-w-full flex-1 items-center gap-2 sm:flex-none">
+                        <label className="inline-flex min-h-12 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={selectedReportIds.includes(record.id)}
+                            onChange={() => toggleReport(record.id)}
+                            disabled={generatingSelectedReports}
+                            aria-label={`Select report for ${student.studentName}: ${record.context}, ${formatReteachDate(record.reteachDate)}, assigned by ${record.assignedByName || "Unknown"}`}
+                            className="h-5 w-5 rounded border-slate-300 accent-sky-700 focus:ring-2 focus:ring-sky-400"
+                          />
+                          Select Report
+                        </label>
                       <button
                         type="button"
                         onClick={() => handleGenerateReport(record)}
@@ -188,8 +188,9 @@ export function PendingReteaches({
                         className="inline-flex min-h-12 flex-1 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm transition active:translate-y-px hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-wait disabled:opacity-60 sm:flex-none"
                       >
                         <Download className="h-5 w-5" />
-                        {generatingReportIds.includes(record.id) ? "Generating..." : "Generate Report"}
+                        {generatingReportIds.includes(record.id) ? "Generating..." : "Report"}
                       </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleServed(record)}

@@ -122,7 +122,7 @@ test("selects individual stacked reports and downloads once in displayed order",
   assert.deepEqual(harness.individual, []);
   await click(button("Clear selection"));
   assert.equal(button("Generate Selected Reports").disabled, true);
-  await click(button("Generate Report"));
+  await click(button("Report"));
   assert.equal(harness.individual[0].id, "bobby-1");
 });
 
