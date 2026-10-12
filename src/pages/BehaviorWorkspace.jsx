@@ -20,7 +20,7 @@ import {
 } from "../services/behavior";
 import { reportClientError } from "../services/clientErrors";
 import { X, CheckCircle2, Undo2, PhoneCall } from "lucide-react";
-import { downloadReteachReport } from "../utils/reteachReport";
+import { downloadReteachReport, downloadReteachReports } from "../utils/reteachReport";
 import { TabButton, TabCount } from "../components/behavior/BehaviorTabs.jsx";
 import { BehaviorAssignmentForm } from "../components/behavior/BehaviorAssignmentForm.jsx";
 import BehaviorStudentStats from "../components/BehaviorStudentStats.jsx";
@@ -41,6 +41,7 @@ export default function BehaviorWorkspace() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [servedCount, setServedCount] = useState(null);
   const [generatingReportIds, setGeneratingReportIds] = useState([]);
+  const [generatingSelectedReports, setGeneratingSelectedReports] = useState(false);
   const [devCounts, setDevCounts] = useState(MOCK_COUNTS);
   const [countLoading, setCountLoading] = useState(false);
   const [pending, setPending] = useState([]);
@@ -561,6 +562,23 @@ export default function BehaviorWorkspace() {
     }
   }
 
+  async function handleGenerateSelectedReports(records) {
+    if (!records.length || generatingSelectedReports || records.some(record => generatingReportIds.includes(record.id))) return;
+    const ids = records.map(record => record.id);
+    setGeneratingSelectedReports(true);
+    setGeneratingReportIds(current => [...current, ...ids]);
+    setError("");
+    try {
+      await downloadReteachReports(records);
+    } catch (err) {
+      void reportClientError(err, { source: "operation", operation: "behavior-pdf-batch" });
+      setError(`Could not generate selected reports: ${err.message}`);
+    } finally {
+      setGeneratingReportIds(current => current.filter(id => !ids.includes(id)));
+      setGeneratingSelectedReports(false);
+    }
+  }
+
   async function handleUndoServed() {
     if (!undoRecord || undoing) return;
 
@@ -773,6 +791,8 @@ export default function BehaviorWorkspace() {
           pendingStudentGroups={pendingStudentGroups}
           pendingCounts={pendingCounts}
           handleGenerateReport={handleGenerateReport}
+          handleGenerateSelectedReports={handleGenerateSelectedReports}
+          generatingSelectedReports={generatingSelectedReports}
           generatingReportIds={generatingReportIds}
           handleServed={handleServed}
           servingIds={servingIds}

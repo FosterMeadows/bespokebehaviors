@@ -184,18 +184,49 @@ function safeFilenamePart(value) {
     .toLowerCase() || "student";
 }
 
-export async function downloadReteachReport(record) {
+export async function generateReteachReports(templateBytes, records) {
+  if (!records.length) throw new Error("Select at least one report to generate.");
+  const { PDFDocument } = await loadPdfLib();
+  const combined = await PDFDocument.create();
+  for (const record of records) {
+    try {
+      const report = await PDFDocument.load(await generateReteachReport(templateBytes, record));
+      const pages = await combined.copyPages(report, report.getPageIndices());
+      pages.forEach(page => combined.addPage(page));
+    } catch (error) {
+      throw new Error(`Report for ${cleanText(record.studentName) || "Student"} could not be generated: ${error.message}`);
+    }
+  }
+  combined.setTitle(`Behavior Reteach & Reset - ${records.length} reports`);
+  combined.setSubject("Generated behavior reteach reports");
+  return combined.save();
+}
+
+async function loadReportTemplate() {
   const templateUrl = `${import.meta.env.BASE_URL}${TEMPLATE_PATH}`;
   const response = await fetch(templateUrl);
   if (!response.ok) throw new Error("The report template could not be loaded.");
+  return response.arrayBuffer();
+}
 
-  const bytes = await generateReteachReport(await response.arrayBuffer(), record);
+function downloadPdf(bytes, filename) {
   const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
   const link = document.createElement("a");
   link.href = blobUrl;
-  link.download = `reteach-report-${safeFilenamePart(record.studentName)}.pdf`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+}
+
+export async function downloadReteachReport(record) {
+  const bytes = await generateReteachReport(await loadReportTemplate(), record);
+  downloadPdf(bytes, `reteach-report-${safeFilenamePart(record.studentName)}.pdf`);
+}
+
+export async function downloadReteachReports(records) {
+  if (!records.length) throw new Error("Select at least one report to generate.");
+  const bytes = await generateReteachReports(await loadReportTemplate(), records);
+  downloadPdf(bytes, `reteach-reports-${records.length}.pdf`);
 }

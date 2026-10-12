@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Search, CheckCircle2, UserRound, CalendarDays, MapPin, AlertTriangle, Download, Puzzle } from "lucide-react";
 import { BEHAVIOR_THRESHOLD } from "../../services/behavior";
 import { formatReteachDate } from "../../utils/behaviorPresentation.js";
@@ -12,11 +13,27 @@ export function PendingReteaches({
   pendingStudentGroups,
   pendingCounts,
   handleGenerateReport,
+  handleGenerateSelectedReports,
+  generatingSelectedReports,
   generatingReportIds,
   handleServed,
   servingIds,
   cancelButton
 }) {
+  const [selectedReportIds, setSelectedReportIds] = useState([]);
+  const displayedReports = pendingStudentGroups.flatMap(group => group.records);
+  const selectedReports = displayedReports.filter(record => selectedReportIds.includes(record.id));
+  const selectedReportBusy = selectedReports.some(record => generatingReportIds.includes(record.id));
+
+  useEffect(() => {
+    const visibleIds = new Set(pendingStudentGroups.flatMap(group => group.records.map(record => record.id)));
+    setSelectedReportIds(current => current.filter(id => visibleIds.has(id)));
+  }, [pendingStudentGroups]);
+
+  function toggleReport(id) {
+    setSelectedReportIds(current => current.includes(id) ? current.filter(selectedId => selectedId !== id) : [...current, id]);
+  }
+
   return (
     <section className="space-y-4">
           <div className="sticky top-20 z-20 border-b border-slate-200 bg-white p-3">
@@ -63,6 +80,25 @@ export function PendingReteaches({
               </div>
             )}
             </div>
+            {pending.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3">
+                <button
+                  type="button"
+                  onClick={() => handleGenerateSelectedReports(selectedReports)}
+                  disabled={!selectedReports.length || generatingSelectedReports || selectedReportBusy}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-sky-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  {generatingSelectedReports ? "Generating selected reports…" : `Generate Selected Reports (${selectedReports.length})`}
+                </button>
+                <span className="text-sm text-slate-600" role="status">
+                  {selectedReports.length ? `${selectedReports.length} reports selected · One PDF, in displayed order` : "Select individual reports to download one combined PDF."}
+                </span>
+                {selectedReports.length > 0 && (
+                  <button type="button" onClick={() => setSelectedReportIds([])} disabled={generatingSelectedReports} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60">Clear selection</button>
+                )}
+              </div>
+            )}
           </div>
 
           {visiblePending.length !== pending.length && <p className="text-sm text-slate-500" role="status">Showing {visiblePending.length} of {pending.length} reteaches</p>}
@@ -113,6 +149,17 @@ export function PendingReteaches({
                       <section key={record.id} aria-label={student.studentName + ": " + record.context + ", " + formatReteachDate(record.reteachDate)} className="p-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold">
+                      <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={selectedReportIds.includes(record.id)}
+                          onChange={() => toggleReport(record.id)}
+                          disabled={generatingSelectedReports}
+                          aria-label={`Select report for ${student.studentName}: ${record.context}, ${formatReteachDate(record.reteachDate)}, assigned by ${record.assignedByName || "Unknown"}`}
+                          className="h-5 w-5 rounded border-slate-300 accent-sky-700 focus:ring-2 focus:ring-sky-400"
+                        />
+                        Select report
+                      </label>
                       <span className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1 text-slate-700">
                         <UserRound className="h-4 w-4 shrink-0" />
                         Assigned by {record.assignedByName || "Unknown"}
