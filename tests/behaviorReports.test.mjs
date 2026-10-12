@@ -9,6 +9,7 @@ import { build } from "vite";
 import react from "@vitejs/plugin-react";
 
 const context = createContext(null);
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 const rootDirectory = fileURLToPath(new URL("../", import.meta.url));
 let buildDirectory, api, root, dom, harness;
 const record = (id, studentId, studentName, date, note) => ({
@@ -77,7 +78,7 @@ beforeEach(async () => {
     globalThis[name] = name === "window" ? dom.window : dom.window[name];
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   harness = {
-    context, batches: [], individual: [],
+    context, batches: [], individual: [], clipboardWrites: [],
     // The raw queue interleaves students; the UI stacks Bobby's reports together.
     records: [
       record("bobby-1", "bobby", "Bobby", "2026-10-01", "First Bobby report"),
@@ -87,6 +88,10 @@ beforeEach(async () => {
     ],
     async generate(records) { this.batches.push(records); }
   };
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: dom.window.navigator });
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+    writeText: async text => harness.clipboardWrites.push(text)
+  } });
   globalThis.__behaviorReports = harness;
   if (!api) api = await import(pathToFileURL(join(buildDirectory, "components.mjs")));
   const { createRoot } = await import("react-dom/client");
@@ -98,6 +103,8 @@ beforeEach(async () => {
 
 afterEach(async () => { await act(async () => root.unmount()); dom.window.close(); });
 after(async () => {
+  if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+  else delete globalThis.navigator;
   delete globalThis.__behaviorReports;
   if (!buildDirectory) return;
   await unlink(join(buildDirectory, "components.mjs"));
@@ -163,4 +170,43 @@ test("disables duplicate generation and restores selection after a batch error",
   assert.match(document.body.textContent, /Could not generate selected reports: Template unavailable/);
   assert.equal(button("Generate Selected Reports").disabled, false);
   assert.equal(checkboxes()[0].checked, true);
+});
+
+test("copies each selected student's name once in displayed order without changing selection", async () => {
+  assert.equal(button("Copy Selected Names").disabled, true);
+  await click(checkboxes()[3]);
+  await click(checkboxes()[1]);
+  await click(checkboxes()[2]);
+  await click(checkboxes()[0]);
+  await click(button("Copy Selected Names"));
+  assert.deepEqual(harness.clipboardWrites, ["Bobby\nStacy\nGwen"]);
+  assert.match(document.body.textContent, /Copied 3 student names to clipboard/);
+  assert.equal(checkboxes().every(input => input.checked), true);
+  assert.equal(harness.batches.length, 0);
+  await click(button("Clear selection"));
+  assert.equal(button("Copy Selected Names").disabled, true);
+  assert.doesNotMatch(document.body.textContent, /Copied 3 student names/);
+});
+
+test("keeps distinct students with the same name in the clipboard list", async () => {
+  await act(async () => harness.deliver([
+    ...harness.records,
+    record("bobby-other", "different-bobby", "Bobby", "2026-10-05", "A different student")
+  ]));
+  await click(checkboxes()[0]);
+  await click(checkboxes()[4]);
+  await click(button("Copy Selected Names"));
+  assert.deepEqual(harness.clipboardWrites, ["Bobby\nBobby"]);
+});
+
+test("shows a clipboard error and lets the user retry", async () => {
+  navigator.clipboard.writeText = async () => { throw new Error("Permission denied"); };
+  await click(checkboxes()[0]);
+  await click(button("Copy Selected Names"));
+  assert.match(document.body.textContent, /Could not copy names/);
+  assert.equal(button("Copy Selected Names").disabled, false);
+  navigator.clipboard.writeText = async text => harness.clipboardWrites.push(text);
+  await click(button("Copy Selected Names"));
+  assert.deepEqual(harness.clipboardWrites, ["Bobby"]);
+  assert.match(document.body.textContent, /Copied 1 student name to clipboard/);
 });

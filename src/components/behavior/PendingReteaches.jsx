@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, CheckCircle2, UserRound, CalendarDays, MapPin, AlertTriangle, Download, Puzzle } from "lucide-react";
+import { Search, CheckCircle2, UserRound, CalendarDays, MapPin, AlertTriangle, Download, Copy, Puzzle } from "lucide-react";
 import { BEHAVIOR_THRESHOLD } from "../../services/behavior";
 import { formatReteachDate } from "../../utils/behaviorPresentation.js";
 
@@ -21,6 +21,8 @@ export function PendingReteaches({
   cancelButton
 }) {
   const [selectedReportIds, setSelectedReportIds] = useState([]);
+  const [copyingNames, setCopyingNames] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState("");
   const displayedReports = pendingStudentGroups.flatMap(group => group.records);
   const selectedReports = displayedReports.filter(record => selectedReportIds.includes(record.id));
   const selectedReportBusy = selectedReports.some(record => generatingReportIds.includes(record.id));
@@ -28,10 +30,38 @@ export function PendingReteaches({
   useEffect(() => {
     const visibleIds = new Set(pendingStudentGroups.flatMap(group => group.records.map(record => record.id)));
     setSelectedReportIds(current => current.filter(id => visibleIds.has(id)));
+    setCopyFeedback("");
   }, [pendingStudentGroups]);
 
   function toggleReport(id) {
+    setCopyFeedback("");
     setSelectedReportIds(current => current.includes(id) ? current.filter(selectedId => selectedId !== id) : [...current, id]);
+  }
+
+  async function copySelectedNames() {
+    if (!selectedReports.length || copyingNames) return;
+    const seen = new Set();
+    const names = selectedReports.flatMap(record => {
+      const name = String(record.studentName || "").trim();
+      const studentKey = record.studentId || name;
+      if (!name || seen.has(studentKey)) return [];
+      seen.add(studentKey);
+      return [name];
+    });
+    if (!names.length) {
+      setCopyFeedback("The selected reports do not have student names to copy.");
+      return;
+    }
+    setCopyingNames(true);
+    setCopyFeedback("");
+    try {
+      await navigator.clipboard.writeText(names.join("\n"));
+      setCopyFeedback(`Copied ${names.length} student ${names.length === 1 ? "name" : "names"} to clipboard.`);
+    } catch {
+      setCopyFeedback("Could not copy names. Check clipboard permissions and try again.");
+    } finally {
+      setCopyingNames(false);
+    }
   }
 
   return (
@@ -91,12 +121,21 @@ export function PendingReteaches({
                   <Download className="h-4 w-4" aria-hidden="true" />
                   {generatingSelectedReports ? "Generating selected reports…" : `Generate Selected Reports (${selectedReports.length})`}
                 </button>
-                <span className="text-sm text-slate-600" role="status">
-                  {selectedReports.length ? `${selectedReports.length} reports selected · One PDF, in displayed order` : "Select individual reports to download one combined PDF."}
-                </span>
+                <button
+                  type="button"
+                  onClick={copySelectedNames}
+                  disabled={!selectedReports.length || copyingNames}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Copy className="h-4 w-4" aria-hidden="true" />
+                  {copyingNames ? "Copying…" : "Copy Selected Names"}
+                </button>
                 {selectedReports.length > 0 && (
-                  <button type="button" onClick={() => setSelectedReportIds([])} disabled={generatingSelectedReports} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60">Clear selection</button>
+                  <button type="button" onClick={() => { setSelectedReportIds([]); setCopyFeedback(""); }} disabled={generatingSelectedReports} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60">Clear selection</button>
                 )}
+                <span className="text-sm text-slate-600" role="status">
+                  {copyFeedback || (selectedReports.length ? `${selectedReports.length} reports selected · One PDF, in displayed order` : "Select individual reports to download one combined PDF.")}
+                </span>
               </div>
             )}
           </div>
