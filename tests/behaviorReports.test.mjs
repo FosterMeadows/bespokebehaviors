@@ -180,9 +180,16 @@ test("copies each selected student's name once in displayed order without changi
   await click(checkboxes()[0]);
   await click(button("Copy Selected Names"));
   assert.deepEqual(harness.clipboardWrites, ["Bobby\nStacy\nGwen"]);
+  assert.ok(button("Copied"));
   assert.match(document.body.textContent, /Copied 3 student names to clipboard/);
   assert.equal(checkboxes().every(input => input.checked), true);
   assert.equal(harness.batches.length, 0);
+  await act(async () => harness.deliver(harness.records.map(row => ({ ...row }))));
+  assert.ok(button("Copied"), "Copied state survives a queue refresh with the same selection");
+  await click(checkboxes()[3]);
+  assert.ok(button("Copy Selected Names"), "Changing the selection resets the button");
+  await click(button("Copy Selected Names"));
+  assert.ok(button("Copied"));
   await click(button("Clear selection"));
   assert.equal(button("Copy Selected Names").disabled, true);
   assert.doesNotMatch(document.body.textContent, /Copied 3 student names/);

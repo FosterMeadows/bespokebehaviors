@@ -22,9 +22,12 @@ export function PendingReteaches({
 }) {
   const [selectedReportIds, setSelectedReportIds] = useState([]);
   const [copyingNames, setCopyingNames] = useState(false);
+  const [copiedSelectionKey, setCopiedSelectionKey] = useState(null);
   const [copyFeedback, setCopyFeedback] = useState("");
   const displayedReports = pendingStudentGroups.flatMap(group => group.records);
   const selectedReports = displayedReports.filter(record => selectedReportIds.includes(record.id));
+  const selectionKey = JSON.stringify(selectedReports.map(record => [record.id, record.studentName]));
+  const namesCopied = selectedReports.length > 0 && copiedSelectionKey === selectionKey;
   const selectedReportBusy = selectedReports.some(record => generatingReportIds.includes(record.id));
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export function PendingReteaches({
 
   function toggleReport(id) {
     setCopyFeedback("");
+    setCopiedSelectionKey(null);
     setSelectedReportIds(current => current.includes(id) ? current.filter(selectedId => selectedId !== id) : [...current, id]);
   }
 
@@ -53,9 +57,11 @@ export function PendingReteaches({
       return;
     }
     setCopyingNames(true);
+    setCopiedSelectionKey(null);
     setCopyFeedback("");
     try {
       await navigator.clipboard.writeText(names.join("\n"));
+      setCopiedSelectionKey(selectionKey);
       setCopyFeedback(`Copied ${names.length} student ${names.length === 1 ? "name" : "names"} to clipboard.`);
     } catch {
       setCopyFeedback("Could not copy names. Check clipboard permissions and try again.");
@@ -125,13 +131,13 @@ export function PendingReteaches({
                   type="button"
                   onClick={copySelectedNames}
                   disabled={!selectedReports.length || copyingNames}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${namesCopied ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 focus:ring-emerald-300" : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50 focus:ring-slate-300"}`}
                 >
-                  <Copy className="h-4 w-4" aria-hidden="true" />
-                  {copyingNames ? "Copying…" : "Copy Selected Names"}
+                  {namesCopied ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                  {copyingNames ? "Copying…" : namesCopied ? "Copied" : "Copy Selected Names"}
                 </button>
                 {selectedReports.length > 0 && (
-                  <button type="button" onClick={() => { setSelectedReportIds([]); setCopyFeedback(""); }} disabled={generatingSelectedReports} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60">Clear selection</button>
+                  <button type="button" onClick={() => { setSelectedReportIds([]); setCopyFeedback(""); setCopiedSelectionKey(null); }} disabled={generatingSelectedReports} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60">Clear selection</button>
                 )}
                 <span className="text-sm text-slate-600" role="status">
                   {copyFeedback || (selectedReports.length ? `${selectedReports.length} reports selected · One PDF, in displayed order` : "Select individual reports to download one combined PDF.")}
